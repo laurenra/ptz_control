@@ -453,15 +453,6 @@ class _ControlShellState extends State<ControlShell>
         const SizedBox(height: 12),
         _controlDeck(),
         const SizedBox(height: 8),
-        Tooltip(
-          message: 'Store the current aperture. Recall keeps Manual exposure or uses Iris Priority so the saved aperture takes effect.',
-          child: _check(
-            'Save aperture with preset',
-            c.saveApertureWithPreset,
-            c.setSaveAperture,
-            enabled: !c.presetBusy,
-          ),
-        ),
         Center(
           child: IconButton(
             tooltip: 'Return camera home',
@@ -473,12 +464,7 @@ class _ControlShellState extends State<ControlShell>
         ),
         _presets(),
         const SizedBox(height: 4),
-        _check(
-          'Save preset',
-          c.savePresetMode,
-          c.setSavePresetMode,
-          enabled: !c.presetBusy,
-        ),
+        _presetSaveOptions(),
         if (c.presetBusy)
           const Padding(
             padding: EdgeInsets.only(top: 4),
@@ -488,12 +474,46 @@ class _ControlShellState extends State<ControlShell>
     ],
   );
 
+  Widget _presetSaveOptions() => LayoutBuilder(
+    builder: (context, constraints) {
+      final save = _check(
+        'Save preset',
+        c.savePresetMode,
+        c.setSavePresetMode,
+        enabled: !c.presetBusy,
+        fontSize: 11,
+      );
+      final aperture = Tooltip(
+        message: 'Store the current aperture. Recall keeps Manual exposure or uses Iris Priority so the saved aperture takes effect.',
+        child: _check(
+          'Save aperture with preset',
+          c.saveApertureWithPreset,
+          c.setSaveAperture,
+          enabled: !c.presetBusy,
+          fontSize: 11,
+          textAlign: TextAlign.start,
+        ),
+      );
+      // Account for the left rail so the aperture option starts at the
+      // window midpoint with either navigation placement.
+      final leftWidth =
+          (constraints.maxWidth - (c.sideNavigation ? 60 : 0)) / 2;
+      return Row(
+        children: [
+          SizedBox(width: leftWidth, child: save),
+          Expanded(child: aperture),
+        ],
+      );
+    },
+  );
+
   Widget _check(
     String label,
     bool value,
     ValueChanged<bool> onChanged, {
     bool enabled = true,
     double fontSize = 12,
+    TextAlign textAlign = TextAlign.start,
   }) => InkWell(
     onTap: enabled ? () => onChanged(!value) : null,
     borderRadius: BorderRadius.circular(6),
@@ -516,6 +536,7 @@ class _ControlShellState extends State<ControlShell>
             child: Text(
               label,
               maxLines: 2,
+              textAlign: textAlign,
               style: TextStyle(fontSize: fontSize),
             ),
           ),
@@ -533,15 +554,18 @@ class _ControlShellState extends State<ControlShell>
       final lensGap = wide ? 12.0 : 10.0;
       final header = Row(
         children: [
-          const Text(
-            'SPEED',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
+          const SizedBox(
+            width: 64,
+            child: Text(
+              'SPEED',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+              ),
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: lensGap),
           Expanded(
             child: Tooltip(
               message:
