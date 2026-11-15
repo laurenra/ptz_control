@@ -11,6 +11,47 @@ flutter run -d macos
 
 Use `flutter devices` to find another target, then `flutter run -d <device-id>`. Build each desktop target on its corresponding OS; mobile builds require the relevant native SDK and signing configuration. This app uses native UDP sockets and does not target web browsers.
 
+## Build
+
+Release builds package the application for use outside the development environment. Run the build commands from the project folder.
+
+### macOS
+
+Build on a Mac with Flutter and Xcode installed:
+
+```sh
+flutter pub get
+flutter build macos --release
+```
+
+The standalone application is created at:
+
+```text
+build/macos/Build/Products/Release/ptz_control.app
+```
+
+The currently verified release supports **Intel and Apple Silicon Macs running macOS 13 or later**. Flutter and the required frameworks are included in the app, so the receiving Mac does **not** need Flutter, Dart, or Xcode. App Store publishing is not required.
+
+To use the app locally, open the output folder and drag **ptz_control.app** into **Applications**, then double-click it to launch:
+
+```sh
+open build/macos/Build/Products/Release
+```
+
+To package the complete app bundle for copying to another Mac:
+
+```sh
+ditto -c -k --sequesterRsrc --keepParent \
+  build/macos/Build/Products/Release/ptz_control.app \
+  build/ptz_control-macos.zip
+```
+
+Copy **build/ptz_control-macos.zip** to the other Mac, unzip it, drag **ptz_control.app** into **Applications**, and double-click it. Copy the entire `.app` bundle rather than just the executable inside it.
+
+The current build is ad hoc signed and is not notarized. If macOS blocks an app you built or trust, try opening it once, then go to **System Settings → Privacy & Security → Open Anyway**. See [Apple’s instructions for opening an unnotarized app](https://support.apple.com/en-us/102445).
+
+Camera configurations and preset display names are stored separately on each Mac; copying the app does not transfer them. Presets stored in the camera remain in the camera.
+
 ## Connect a camera
 
 1. Open **Cameras** → **Add camera**.
