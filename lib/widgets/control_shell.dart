@@ -526,8 +526,12 @@ class _ControlShellState extends State<ControlShell>
 
   Widget _controlDeck() => LayoutBuilder(
     builder: (context, constraints) {
-      final right = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      const columnHeight = 194.0;
+      final wide = constraints.maxWidth >= 340;
+      final padWidth = wide ? 168.0 : 132.0;
+      final movementGap = wide ? 24.0 : 16.0;
+      final lensGap = wide ? 12.0 : 10.0;
+      final header = Row(
         children: [
           const Text(
             'SPEED',
@@ -537,93 +541,125 @@ class _ControlShellState extends State<ControlShell>
               letterSpacing: 1.2,
             ),
           ),
-          Tooltip(
-            message:
-                'Link both speeds from 1 to 20, the shared pan/tilt range.',
-            child: _check(
-              'Sync pan/tilt',
-              c.syncPanTilt,
-              c.setSyncPanTilt,
-              enabled: !c.moving && !c.presetBusy,
-              fontSize: 10,
+          const SizedBox(width: 8),
+          Expanded(
+            child: Tooltip(
+              message:
+                  'Link both speeds from 1 to 20, the shared pan/tilt range.',
+              child: _check(
+                'Sync pan / tilt',
+                c.syncPanTilt,
+                c.setSyncPanTilt,
+                enabled: !c.moving && !c.presetBusy,
+                fontSize: 10,
+              ),
             ),
           ),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(width: 64, child: _speeds()),
-              const SizedBox(width: 8),
-              SizedBox(
-                width: 56,
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 40,
-                      child: _lensButton(
-                        'Zoom out',
-                        Icons.remove,
-                        false,
-                        false,
-                        'Zoom −',
-                      ),
+        ],
+      );
+      final speedAndLens = Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            key: const Key('speed-controls'),
+            width: 64,
+            height: columnHeight,
+            child: _speeds(),
+          ),
+          SizedBox(width: lensGap),
+          Expanded(
+            child: SizedBox(
+              key: const Key('lens-controls'),
+              height: columnHeight,
+              child: Column(
+                children: [
+                  SizedBox(
+                    height: 44,
+                    child: _lensButton(
+                      'Zoom out',
+                      Icons.remove,
+                      false,
+                      false,
+                      'Zoom −',
                     ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 40,
-                      child: _lensButton(
-                        'Zoom in',
-                        Icons.add,
-                        false,
-                        true,
-                        'Zoom +',
-                      ),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: 44,
+                    child: _lensButton(
+                      'Zoom in',
+                      Icons.add,
+                      false,
+                      true,
+                      'Zoom +',
                     ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 40,
-                      child: _lensButton(
-                        'Focus near',
-                        Icons.filter_center_focus,
-                        true,
-                        false,
-                        'Focus\nnear',
-                      ),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: 44,
+                    child: _lensButton(
+                      'Focus near',
+                      Icons.filter_center_focus,
+                      true,
+                      false,
+                      'Focus near',
                     ),
-                    const SizedBox(height: 6),
-                    SizedBox(
-                      height: 40,
-                      child: _lensButton(
-                        'Focus far',
-                        Icons.center_focus_strong,
-                        true,
-                        true,
-                        'Focus\nfar',
-                      ),
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: 44,
+                    child: _lensButton(
+                      'Focus far',
+                      Icons.center_focus_strong,
+                      true,
+                      true,
+                      'Focus far',
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       );
       if (constraints.maxWidth < 280) {
         return Column(
           children: [
-            SizedBox(width: 156, child: _directionPad()),
+            SizedBox(
+              key: const Key('movement-grid'),
+              width: 168,
+              height: columnHeight,
+              child: _directionPad(),
+            ),
             const SizedBox(height: 12),
-            SizedBox(width: 156, child: right),
+            header,
+            const SizedBox(height: 6),
+            speedAndLens,
           ],
         );
       }
-      final padWidth = constraints.maxWidth >= 340 ? 156.0 : 132.0;
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      return Column(
         children: [
-          SizedBox(width: padWidth, child: _directionPad()),
-          const SizedBox(width: 12),
-          Expanded(child: right),
+          Row(
+            children: [
+              SizedBox(width: padWidth + movementGap),
+              Expanded(child: header),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                key: const Key('movement-grid'),
+                width: padWidth,
+                height: columnHeight,
+                child: _directionPad(),
+              ),
+              SizedBox(width: movementGap),
+              Expanded(child: speedAndLens),
+            ],
+          ),
         ],
       );
     },
@@ -747,7 +783,7 @@ class _ControlShellState extends State<ControlShell>
                 child: Padding(
                   padding: EdgeInsets.only(right: col < 2 ? 6 : 0),
                   child: SizedBox(
-                    height: 48,
+                    height: (194 - 12) / 3,
                     child: stop
                         ? IconButton.filledTonal(
                             tooltip: 'Stop all movement',
@@ -800,11 +836,12 @@ class _ControlShellState extends State<ControlShell>
   );
 
   Widget _speed(String label, int value, int min, int max) => SizedBox(
-    height: 40,
+    height: 44,
     child: DropdownButtonFormField<int>(
       key: ValueKey('$label-$value'),
       initialValue: value,
       isExpanded: true,
+      isVerticallyExpanded: true,
       iconSize: 16,
       decoration: InputDecoration(
         labelText: label,
