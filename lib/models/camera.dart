@@ -34,9 +34,8 @@ class Camera {
   );
 
   String get endpoint => '$host:$port';
-  String get protocolLabel => transport == ViscaTransport.raw
-      ? 'Raw VISCA / UDP'
-      : 'Sony VISCA over IP';
+  String get protocolLabel =>
+      transport == ViscaTransport.raw ? 'Raw VISCA / UDP' : 'VISCA over IP';
 
   static String? validateHost(String? value) {
     final address = InternetAddress.tryParse(value?.trim() ?? '');

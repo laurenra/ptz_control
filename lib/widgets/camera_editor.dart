@@ -17,13 +17,13 @@ class _CameraEditorState extends State<CameraEditor> {
   late final _name = TextEditingController(text: widget.camera?.name ?? '');
   late final _host = TextEditingController(text: widget.camera?.host ?? '');
   late final _port = TextEditingController(
-    text: '${widget.camera?.port ?? 1259}',
+    text: '${widget.camera?.port ?? 52381}',
   );
   late final _local = TextEditingController(
     text: '${widget.camera?.localPort ?? 0}',
   );
   late ViscaTransport _transport =
-      widget.camera?.transport ?? ViscaTransport.raw;
+      widget.camera?.transport ?? ViscaTransport.sony;
   bool _saving = false;
   String? _error;
 
@@ -111,7 +111,7 @@ class _CameraEditorState extends State<CameraEditor> {
                     ),
                     DropdownMenuItem(
                       value: ViscaTransport.sony,
-                      child: Text('Sony VISCA over IP'),
+                      child: Text('VISCA over IP'),
                     ),
                   ],
                   onChanged: _saving

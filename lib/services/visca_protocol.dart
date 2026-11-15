@@ -33,6 +33,23 @@ class Visca {
 
   static const apertureInquiry = [0x81, 9, 4, 0x4b, 0xff];
   static const exposureModeInquiry = [0x81, 9, 4, 0x39, 0xff];
+  static const whiteBalanceModeInquiry = [0x81, 9, 4, 0x35, 0xff];
+  static const exposureModes = {
+    0x00: 'Full auto',
+    0x03: 'Manual',
+    0x0a: 'Shutter priority',
+    0x0b: 'Iris priority',
+  };
+  static const whiteBalanceModes = {
+    0x00: 'Auto',
+    0x01: 'Indoor',
+    0x02: 'Outdoor',
+    0x03: 'One push',
+    0x05: 'Manual',
+  };
+
+  static String modeLabel(int? code, Map<int, String> modes) =>
+      code == null ? '—' : modes[code] ?? 'Unknown (0x${hex([code])})';
 
   static List<int> positionNibbles(int value, {bool signed = false}) {
     RangeError.checkValueInInterval(

@@ -384,6 +384,14 @@ class _ControlShellState extends State<ControlShell>
             _metric('ZOOM', c.zoom),
           ],
         ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            _modeStatus('EXPOSURE', c.exposureModeLabel),
+            const SizedBox(width: 12),
+            _modeStatus('WHITE BALANCE', c.whiteBalanceModeLabel),
+          ],
+        ),
       ],
     );
   }
@@ -400,6 +408,19 @@ class _ControlShellState extends State<ControlShell>
             color: _muted,
             fontFamily: 'monospace',
           ),
+        ),
+      ),
+    ),
+  );
+
+  Widget _modeStatus(String label, String value) => Expanded(
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          '$label: $value',
+          style: const TextStyle(fontSize: 11, color: _muted),
         ),
       ),
     ),

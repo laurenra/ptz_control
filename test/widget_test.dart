@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ptz_control/main.dart';
+import 'package:ptz_control/models/camera.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -22,6 +23,22 @@ void main() {
     // Layout exceptions are reported directly by the test binding.
     await tester.tap(find.text('Add camera'));
     await tester.pumpAndSettle();
+    expect(
+      tester
+          .state<FormFieldState<ViscaTransport>>(
+            find.byType(DropdownButtonFormField<ViscaTransport>),
+          )
+          .value,
+      ViscaTransport.sony,
+    );
+    expect(find.text('VISCA over IP'), findsOneWidget);
+    expect(find.text('Sony VISCA over IP'), findsNothing);
+    final portField = tester.widget<TextField>(
+      find.byWidgetPredicate(
+        (w) => w is TextField && w.decoration?.labelText == 'Camera port',
+      ),
+    );
+    expect(portField.controller!.text, '52381');
     await tester.tap(find.text('Save camera'));
     await tester.pumpAndSettle();
     expect(find.text('Enter a camera name'), findsOneWidget);

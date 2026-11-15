@@ -17,7 +17,7 @@ Use `flutter devices` to find another target, then `flutter run -d <device-id>`.
 2. Enter a name, unicast IPv4 address, and the camera's configured UDP port.
 3. Choose the packet format supported by the camera:
    - **Raw VISCA** sends the VISCA bytes directly (default port 1259).
-   - **Sony VISCA over IP** prepends the eight-byte payload/length/sequence header (default port 52381). Opening a session sends the sequence-reset control packet. Replies are matched by sequence number.
+   - **VISCA over IP** (the default for new cameras) prepends the eight-byte payload/length/sequence header (default port 52381). Opening a session sends the sequence-reset control packet. Replies are matched by sequence number.
 4. Leave **Local port** at 0 to use an available port. Some cameras require a fixed controller port; enter that value if needed.
 5. Save, then select a camera from the dropdown on **Control** or **Image**. Up to eight configurations are stored locally across launches. Saving changes to a camera selects and reconnects it.
 
@@ -47,7 +47,7 @@ The compact Control page places the refresh button next to camera selection, sho
 
 ## Camera status and protocol limits
 
-Selecting a camera opens its UDP socket and queries pan/tilt, zoom, and focus mode. Polling repeats every two seconds, pauses while a movement is held, and resumes afterward. **Connected** requires a valid VISCA reply from the configured camera address and port; sending a UDP datagram does not establish a connection. After five seconds without replies, the UI shows **No response** and clears telemetry. A status refresh button and reconnect action are available.
+Selecting a camera opens its UDP socket and queries pan/tilt, zoom, focus mode, AE exposure mode, and white balance mode. The status card shows the queried exposure and white balance names below the position values. Missing replies show a dash, and unrecognized mode codes are shown as unknown with their hex code. Polling repeats every two seconds, pauses while a movement is held, and resumes afterward. **Connected** requires a valid VISCA reply from the configured camera address and port; sending a UDP datagram does not establish a connection. After five seconds without replies, the UI shows **No response** and clears telemetry. A status refresh button and reconnect action are available.
 
 Pan/tilt use signed 16-bit camera-native position units. Zoom is shown as its raw decimal position; the debug console still shows wire bytes in hexadecimal. Scaling these values into degrees or optical magnification requires a camera-specific profile. The app deliberately does not assume one universal conversion.
 

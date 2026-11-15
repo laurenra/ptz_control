@@ -37,6 +37,11 @@ class PtzController extends ChangeNotifier {
   int panSpeed = 8, tiltSpeed = 6, zoomSpeed = 3, focusSpeed = 3;
   int? pan, tilt, zoom;
   bool? autofocus;
+  int? exposureMode, whiteBalanceMode;
+  String get exposureModeLabel =>
+      Visca.modeLabel(exposureMode, Visca.exposureModes);
+  String get whiteBalanceModeLabel =>
+      Visca.modeLabel(whiteBalanceMode, Visca.whiteBalanceModes);
   DateTime? lastReply;
   ViscaClient? _client;
   ViscaClient? _motionClient;
@@ -81,6 +86,7 @@ class PtzController extends ChangeNotifier {
         connection = CameraConnection.offline;
         pan = tilt = zoom = null;
         autofocus = null;
+        exposureMode = whiteBalanceMode = null;
         _notify();
       }
     });
@@ -100,6 +106,7 @@ class PtzController extends ChangeNotifier {
     selected = camera;
     pan = tilt = zoom = null;
     autofocus = null;
+    exposureMode = whiteBalanceMode = null;
     lastReply = null;
     message = null;
     connection = _paused
@@ -192,6 +199,26 @@ class PtzController extends ChangeNotifier {
       if (focus != null && focus.length == 4 && [2, 3].contains(focus[2])) {
         autofocus = focus[2] == 2;
       }
+      _notify();
+      if (moving || presetBusy) return;
+      final exposure = await client.send(
+        'Read exposure mode',
+        Visca.exposureModeInquiry,
+      );
+      if (_client != client || _disposed || _paused) return;
+      exposureMode = exposure != null && exposure.length == 4
+          ? exposure[2]
+          : null;
+      _notify();
+      if (moving || presetBusy) return;
+      final balance = await client.send(
+        'Read white balance mode',
+        Visca.whiteBalanceModeInquiry,
+      );
+      if (_client != client || _disposed || _paused) return;
+      whiteBalanceMode = balance != null && balance.length == 4
+          ? balance[2]
+          : null;
       _notify();
     } finally {
       _polling = false;
@@ -534,6 +561,7 @@ class PtzController extends ChangeNotifier {
         selected = null;
         pan = tilt = zoom = null;
         autofocus = null;
+        exposureMode = whiteBalanceMode = null;
         connection = CameraConnection.none;
         if (cameras.isNotEmpty) await select(cameras.first);
       }

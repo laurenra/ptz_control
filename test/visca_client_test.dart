@@ -190,6 +190,51 @@ void main() {
     },
   );
 
+  test('polls and decodes exposure / white balance modes and clears unsuccessful results', () async {
+    var exposure = 0;
+    var whiteBalance = 0;
+    var rejectModes = false;
+    serve((packet) {
+      final query = packet.data[3];
+      final response = switch (query) {
+        0x12 => [0x90, 0x50, 0, 0, 0, 0, 0, 0, 0, 0, 255],
+        0x47 => [0x90, 0x50, 0, 0, 0, 0, 255],
+        0x39 =>
+          rejectModes ? [0x90, 0x60, 2, 255] : [0x90, 0x50, exposure, 255],
+        0x35 =>
+          rejectModes ? [0x90, 0x60, 2, 255] : [0x90, 0x50, whiteBalance, 255],
+        _ => [0x90, 0x50, 3, 255],
+      };
+      server.send(response, packet.address, packet.port);
+    });
+    final controller = PtzController(store: MemoryStore([camera]));
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    expect(controller.exposureModeLabel, 'Full auto');
+    expect(controller.whiteBalanceModeLabel, 'Auto');
+    for (final modes in [
+      (3, 'Manual', 1, 'Indoor'),
+      (10, 'Shutter priority', 2, 'Outdoor'),
+      (11, 'Iris priority', 3, 'One push'),
+      (0, 'Full auto', 5, 'Manual'),
+      (0x7f, 'Unknown (0x7F)', 4, 'Unknown (0x04)'),
+    ]) {
+      exposure = modes.$1;
+      whiteBalance = modes.$3;
+      await controller.refresh();
+      expect(controller.exposureModeLabel, modes.$2);
+      expect(controller.whiteBalanceModeLabel, modes.$4);
+    }
+    expect(received, contains(equals([0x81, 9, 4, 0x39, 255])));
+    expect(received, contains(equals([0x81, 9, 4, 0x35, 255])));
+    rejectModes = true;
+    await controller.refresh();
+    expect(controller.exposureMode, isNull);
+    expect(controller.whiteBalanceMode, isNull);
+    expect(controller.exposureModeLabel, '—');
+    expect(controller.whiteBalanceModeLabel, '—');
+  });
+
   test('controller polls telemetry, switches cameras after stopping old endpoint, and persists', () async {
     serve((packet) {
       final data = packet.data;
