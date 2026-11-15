@@ -259,7 +259,8 @@ class ViscaClient {
       // In raw UDP, inquiries have no identifiers. Match their known reply shape.
       final expectedLength = active.payload[3] == 0x12
           ? 11
-          : [0x47, 0x4b].contains(active.payload[3])
+          : (active.payload[3] == 0x47 ||
+                Visca.imageValueInquiries.containsKey(active.payload[3]))
           ? 7
           : 4;
       if (!inquiry && kind == 0x40) active.socket = payload[1] & 15;

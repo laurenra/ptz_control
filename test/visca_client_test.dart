@@ -203,6 +203,7 @@ void main() {
           rejectModes ? [0x90, 0x60, 2, 255] : [0x90, 0x50, exposure, 255],
         0x35 =>
           rejectModes ? [0x90, 0x60, 2, 255] : [0x90, 0x50, whiteBalance, 255],
+        0x4a || 0x4b || 0x4c || 0x43 || 0x44 => [0x90, 0x50, 0, 0, 0, 0, 255],
         _ => [0x90, 0x50, 3, 255],
       };
       server.send(response, packet.address, packet.port);
@@ -235,6 +236,50 @@ void main() {
     expect(controller.whiteBalanceModeLabel, '—');
   });
 
+  test(
+    'queries raw image values and clears rejected or invalid replies',
+    () async {
+      final values = {0x4b: 17, 0x4a: 22, 0x4c: 4, 0x43: 128, 0x44: 129};
+      var rejectValues = false;
+      serve((packet) {
+        final register = packet.data[3];
+        final value = values[register];
+        final response = value != null
+            ? rejectValues
+                  ? register == 0x43
+                        ? [0x90, 0x50, 0, 0, 0x10, 0, 255]
+                        : [0x90, 0x60, 2, 255]
+                  : [0x90, 0x50, ...Visca.positionNibbles(value), 255]
+            : switch (register) {
+                0x12 => [0x90, 0x50, 0, 0, 0, 0, 0, 0, 0, 0, 255],
+                0x47 => [0x90, 0x50, 0, 0, 0, 0, 255],
+                _ => [0x90, 0x50, 3, 255],
+              };
+        server.send(response, packet.address, packet.port);
+      });
+      final controller = PtzController(store: MemoryStore([camera]));
+      addTearDown(controller.dispose);
+      List<int?> readValues() => [
+        controller.aperture,
+        controller.shutterSpeed,
+        controller.gain,
+        controller.redGain,
+        controller.blueGain,
+      ];
+      await controller.initialize();
+      expect(readValues(), [17, 22, 4, 128, 129]);
+      for (final register in values.keys) {
+        expect(received, contains(equals([0x81, 9, 4, register, 255])));
+      }
+      values[0x4b] = 12;
+      await controller.refresh();
+      expect(controller.aperture, 12);
+      rejectValues = true;
+      await controller.refresh();
+      expect(readValues(), everyElement(isNull));
+    },
+  );
+
   test('controller polls telemetry, switches cameras after stopping old endpoint, and persists', () async {
     serve((packet) {
       final data = packet.data;
@@ -243,6 +288,11 @@ void main() {
           : switch (data[3]) {
               0x12 => [0x90, 0x50, 15, 15, 15, 14, 0, 0, 1, 0, 255],
               0x47 => [0x90, 0x50, 1, 2, 3, 4, 255],
+              0x4a ||
+              0x4b ||
+              0x4c ||
+              0x43 ||
+              0x44 => [0x90, 0x50, 0, 0, 0, 0, 255],
               _ => [0x90, 0x50, 3, 255],
             };
       server.send(response, packet.address, packet.port);

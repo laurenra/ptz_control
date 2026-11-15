@@ -962,9 +962,21 @@ class _ControlShellState extends State<ControlShell>
                 11: 'Iris priority',
               }, 0x39),
               const SizedBox(height: 10),
-              _stepSetting('Aperture / iris', 0x0b, 'Close', 'Open'),
-              _stepSetting('Shutter speed', 0x0a, 'Slower', 'Faster'),
-              _stepSetting('Gain', 0x0c, 'Lower', 'Higher'),
+              _stepSetting(
+                'Aperture / iris',
+                0x0b,
+                'Close',
+                'Open',
+                value: c.aperture,
+              ),
+              _stepSetting(
+                'Shutter speed',
+                0x0a,
+                'Slower',
+                'Faster',
+                value: c.shutterSpeed,
+              ),
+              _stepSetting('Gain', 0x0c, 'Lower', 'Higher', value: c.gain),
               const Text(
                 'For manual adjustments, select Manual or the matching priority mode first.',
                 style: TextStyle(fontSize: 11, color: _muted),
@@ -988,19 +1000,18 @@ class _ControlShellState extends State<ControlShell>
               }, 0x35),
               const SizedBox(height: 8),
               TextButton.icon(
-                onPressed: c.canControl
-                    ? () => unawaited(
-                        c.command(
-                          'One-push white balance',
-                          Visca.camera(0x10, [5]),
-                        ),
-                      )
-                    : null,
+                onPressed: c.canOperate ? _confirmOnePushBalance : null,
                 icon: const Icon(Icons.wb_sunny_outlined, size: 18),
                 label: const Text('Trigger one-push balance'),
               ),
-              _stepSetting('Red gain', 3, 'Lower', 'Higher'),
-              _stepSetting('Blue gain', 4, 'Lower', 'Higher'),
+              _stepSetting('Red gain', 3, 'Lower', 'Higher', value: c.redGain),
+              _stepSetting(
+                'Blue gain',
+                4,
+                'Lower',
+                'Higher',
+                value: c.blueGain,
+              ),
               const Text(
                 'Select Manual white balance before adjusting gains.',
                 style: TextStyle(fontSize: 11, color: _muted),
@@ -1051,6 +1062,34 @@ class _ControlShellState extends State<ControlShell>
     ],
   );
 
+  Future<void> _confirmOnePushBalance() async {
+    final cameraId = c.selected?.id;
+    await c.endMotion();
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reset white balance with One Push?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true &&
+        mounted &&
+        c.selected?.id == cameraId &&
+        c.canOperate) {
+      await c.command('One-push white balance', Visca.camera(0x10, [5]));
+    }
+  }
+
   Future<void> _focusMode(bool auto) async {
     await c.command(
       auto ? 'Autofocus on' : 'Manual focus',
@@ -1081,33 +1120,55 @@ class _ControlShellState extends State<ControlShell>
             : null,
       );
 
-  Widget _stepSetting(String label, int command, String less, String more) =>
-      Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Row(
-          children: [
-            Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
-            IconButton(
-              tooltip: '$label: $less',
-              onPressed: c.canControl
-                  ? () => unawaited(
-                      c.command('$label: $less', Visca.camera(command, [3])),
-                    )
-                  : null,
-              icon: const Icon(Icons.remove_circle_outline, size: 21),
-            ),
-            IconButton(
-              tooltip: '$label: $more',
-              onPressed: c.canControl
-                  ? () => unawaited(
-                      c.command('$label: $more', Visca.camera(command, [2])),
-                    )
-                  : null,
-              icon: const Icon(Icons.add_circle_outline, size: 21),
-            ),
-          ],
+  Widget _stepSetting(
+    String label,
+    int command,
+    String less,
+    String more, {
+    int? value,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      children: [
+        Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+        IconButton(
+          tooltip: '$label: $less',
+          onPressed: c.canOperate
+              ? () => unawaited(
+                  c.command('$label: $less', Visca.camera(command, [3])),
+                )
+              : null,
+          icon: const Icon(Icons.remove_circle_outline, size: 21),
         ),
-      );
+        IconButton(
+          tooltip: '$label: $more',
+          onPressed: c.canOperate
+              ? () => unawaited(
+                  c.command('$label: $more', Visca.camera(command, [2])),
+                )
+              : null,
+          icon: const Icon(Icons.add_circle_outline, size: 21),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 48,
+          child: Tooltip(
+            message: 'Raw VISCA value',
+            child: Text(
+              value?.toString() ?? '—',
+              key: ValueKey('image-value-$command'),
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 12,
+                fontFamily: 'monospace',
+                color: _muted,
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 
   Widget _cameras() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,

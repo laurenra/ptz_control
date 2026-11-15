@@ -37,6 +37,12 @@ class PtzController extends ChangeNotifier {
   int panSpeed = 8, tiltSpeed = 6, zoomSpeed = 3, focusSpeed = 3;
   int? pan, tilt, zoom;
   bool? autofocus;
+  final Map<int, int?> imageValues = {};
+  int? get aperture => imageValues[0x4b];
+  int? get shutterSpeed => imageValues[0x4a];
+  int? get gain => imageValues[0x4c];
+  int? get redGain => imageValues[0x43];
+  int? get blueGain => imageValues[0x44];
   int? exposureMode, whiteBalanceMode;
   String get exposureModeLabel =>
       Visca.modeLabel(exposureMode, Visca.exposureModes);
@@ -87,6 +93,7 @@ class PtzController extends ChangeNotifier {
         pan = tilt = zoom = null;
         autofocus = null;
         exposureMode = whiteBalanceMode = null;
+        imageValues.clear();
         _notify();
       }
     });
@@ -107,6 +114,7 @@ class PtzController extends ChangeNotifier {
     pan = tilt = zoom = null;
     autofocus = null;
     exposureMode = whiteBalanceMode = null;
+    imageValues.clear();
     lastReply = null;
     message = null;
     connection = _paused
@@ -220,6 +228,24 @@ class PtzController extends ChangeNotifier {
           ? balance[2]
           : null;
       _notify();
+      for (final inquiry in Visca.imageValueInquiries.entries) {
+        if (moving || presetBusy) return;
+        final reply = await client.send(
+          'Read ${inquiry.value}',
+          Visca.imageValueInquiry(inquiry.key),
+        );
+        if (_client != client || _disposed || _paused) return;
+        int? value;
+        if (reply != null && reply.length == 7) {
+          try {
+            value = Visca.nibbles(reply.sublist(2, 6));
+          } on FormatException {
+            message = 'Invalid ${inquiry.value} data received';
+          }
+        }
+        imageValues[inquiry.key] = value;
+        _notify();
+      }
     } finally {
       _polling = false;
     }
@@ -562,6 +588,7 @@ class PtzController extends ChangeNotifier {
         pan = tilt = zoom = null;
         autofocus = null;
         exposureMode = whiteBalanceMode = null;
+        imageValues.clear();
         connection = CameraConnection.none;
         if (cameras.isNotEmpty) await select(cameras.first);
       }

@@ -8,6 +8,7 @@ import 'package:ptz_control/models/camera_preset.dart';
 
 class _UiController extends PtzController {
   int stopCount = 0;
+  final commands = <List<int>>[];
   @override
   bool get canControl => true;
   @override
@@ -22,6 +23,7 @@ class _UiController extends PtzController {
     zoom = 16384;
     exposureMode = 0x0a;
     whiteBalanceMode = 2;
+    imageValues.addAll({0x4b: 17, 0x4a: 22, 0x4c: 4, 0x43: 128, 0x44: 129});
     connection = CameraConnection.connected;
     notifyListeners();
   }
@@ -29,6 +31,11 @@ class _UiController extends PtzController {
   @override
   Future<void> stopAll() async {
     stopCount++;
+  }
+
+  @override
+  Future<void> command(String description, List<int> bytes) async {
+    commands.add(List.of(bytes));
   }
 
   @override
@@ -43,6 +50,70 @@ class _UiController extends PtzController {
 }
 
 void main() {
+  testWidgets('Image shows raw values and one-push requires confirmation', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = _UiController();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(MyApp(controller: c));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Image'));
+    await tester.pumpAndSettle();
+    for (final row in [
+      (11, '17', 'Aperture / iris: Open'),
+      (10, '22', 'Shutter speed: Faster'),
+      (12, '4', 'Gain: Higher'),
+      (3, '128', 'Red gain: Higher'),
+      (4, '129', 'Blue gain: Higher'),
+    ]) {
+      final value = find.byKey(ValueKey('image-value-${row.$1}'));
+      await tester.ensureVisible(value);
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(value).data, row.$2);
+      expect(
+        tester.getRect(value).left,
+        greaterThan(tester.getRect(find.byTooltip(row.$3)).right),
+      );
+    }
+    c.imageValues[0x44] = null;
+    c.notifyListeners();
+    await tester.pump();
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('image-value-4'))).data,
+      '—',
+    );
+
+    final trigger = find.text('Trigger one-push balance');
+    Future<void> openConfirmation() async {
+      await tester.ensureVisible(trigger);
+      await tester.tap(trigger);
+      await tester.pumpAndSettle();
+      expect(find.text('Reset white balance with One Push?'), findsOneWidget);
+      expect(c.commands, isEmpty);
+    }
+
+    await openConfirmation();
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(c.commands, isEmpty);
+    await openConfirmation();
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text('Reset white balance with One Push?'), findsNothing);
+    expect(c.commands, isEmpty);
+    await openConfirmation();
+    await tester.tap(find.text('Yes'));
+    await tester.pumpAndSettle();
+    expect(c.commands, [
+      [0x81, 1, 4, 0x10, 5, 0xff],
+    ]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'compact page has inline status, stop center, sync, and all nine visible presets',
     (tester) async {

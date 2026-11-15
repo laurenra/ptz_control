@@ -32,6 +32,20 @@ class Visca {
   static const focusModeInquiry = [0x81, 9, 4, 0x38, 0xff];
 
   static const apertureInquiry = [0x81, 9, 4, 0x4b, 0xff];
+  static const imageValueInquiries = {
+    0x4b: 'aperture',
+    0x4a: 'shutter speed',
+    0x4c: 'gain',
+    0x43: 'red gain',
+    0x44: 'blue gain',
+  };
+  static List<int> imageValueInquiry(int register) => [
+    0x81,
+    9,
+    4,
+    register,
+    0xff,
+  ];
   static const exposureModeInquiry = [0x81, 9, 4, 0x39, 0xff];
   static const whiteBalanceModeInquiry = [0x81, 9, 4, 0x35, 0xff];
   static const exposureModes = {
