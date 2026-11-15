@@ -69,6 +69,21 @@ class _PresetEditorState extends State<PresetEditor> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                ListenableBuilder(
+                  listenable: widget.controller,
+                  builder: (context, _) => widget.controller.exposureMode == 3
+                      ? const Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: Text(
+                            'Manual exposure mode enabled. Exposure and image settings are also saved.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.white70,
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
                 TextFormField(
                   key: const Key('preset-name'),
                   controller: _name,
@@ -92,9 +107,7 @@ class _PresetEditorState extends State<PresetEditor> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  widget.controller.saveApertureWithPreset
-                      ? 'Save the current pan, tilt, zoom, and aperture.'
-                      : 'Save the current pan, tilt, and zoom.',
+                  'Save the current shot to preset ${widget.slot} in the camera. This replaces that camera preset.',
                   style: const TextStyle(fontSize: 12, color: Colors.white60),
                 ),
                 if (_error != null)

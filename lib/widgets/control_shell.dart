@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../controller.dart';
 import '../models/camera.dart';
+import '../services/debug_log_export.dart';
 import '../services/visca_protocol.dart';
 import 'camera_editor.dart';
 import 'hold_button.dart';
@@ -25,6 +26,7 @@ class _ControlShellState extends State<ControlShell>
     with WidgetsBindingObserver {
   late final PtzController c;
   int _tab = 0;
+  bool _savingDebugLog = false;
 
   @override
   void initState() {
@@ -505,12 +507,12 @@ class _ControlShellState extends State<ControlShell>
         fontSize: 11,
       );
       final aperture = Tooltip(
-        message: 'Store the current aperture. Recall keeps Manual exposure or uses Iris Priority so the saved aperture takes effect.',
+        message: 'Unavailable for now. Camera presets manage their own image settings.',
         child: _check(
           'Save aperture with preset',
-          c.saveApertureWithPreset,
-          c.setSaveAperture,
-          enabled: !c.presetBusy,
+          false,
+          null,
+          enabled: false,
           fontSize: 11,
           textAlign: TextAlign.start,
         ),
@@ -531,12 +533,12 @@ class _ControlShellState extends State<ControlShell>
   Widget _check(
     String label,
     bool value,
-    ValueChanged<bool> onChanged, {
+    ValueChanged<bool>? onChanged, {
     bool enabled = true,
     double fontSize = 12,
     TextAlign textAlign = TextAlign.start,
   }) => InkWell(
-    onTap: enabled ? () => onChanged(!value) : null,
+    onTap: enabled && onChanged != null ? () => onChanged(!value) : null,
     borderRadius: BorderRadius.circular(6),
     child: ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 28),
@@ -547,7 +549,9 @@ class _ControlShellState extends State<ControlShell>
             height: 24,
             child: Checkbox(
               value: value,
-              onChanged: enabled ? (v) => onChanged(v!) : null,
+              onChanged: enabled && onChanged != null
+                  ? (v) => onChanged(v!)
+                  : null,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.compact,
             ),
@@ -558,7 +562,10 @@ class _ControlShellState extends State<ControlShell>
               label,
               maxLines: 2,
               textAlign: textAlign,
-              style: TextStyle(fontSize: fontSize),
+              style: TextStyle(
+                fontSize: fontSize,
+                color: enabled ? null : _muted,
+              ),
             ),
           ),
         ],
@@ -727,7 +734,7 @@ class _ControlShellState extends State<ControlShell>
                   height: 48,
                   child: Tooltip(
                     message:
-                        '${c.savePresetMode ? 'Save' : 'Recall'} preset $slot: $label${preset?.aperture != null ? ' · includes aperture' : ''}',
+                        '${c.savePresetMode ? 'Save' : 'Recall'} camera preset $slot: $label',
                     child: OutlinedButton(
                       key: ValueKey('preset-$slot'),
                       onPressed: c.canOperate && !c.moving
@@ -1288,6 +1295,31 @@ class _ControlShellState extends State<ControlShell>
     if (confirmed == true) await c.removeCamera(camera);
   }
 
+  Future<void> _saveDebugLog() async {
+    if (_savingDebugLog || c.logs.isEmpty) return;
+    // Freeze the visible results before opening the picker; polling may continue.
+    final snapshot = List.of(c.logs);
+    setState(() => _savingDebugLog = true);
+    try {
+      await c.endMotion();
+      if (!mounted) return;
+      final result = await saveDebugLog(snapshot);
+      if (!mounted || result == null) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Debug log saved.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(content: Text('Could not save debug log: $error')),
+        );
+    } finally {
+      if (mounted) setState(() => _savingDebugLog = false);
+    }
+  }
+
   Widget _debug() => Container(
     height: 180,
     decoration: const BoxDecoration(
@@ -1312,6 +1344,14 @@ class _ControlShellState extends State<ControlShell>
                 ),
               ),
               const Spacer(),
+              IconButton(
+                tooltip: 'Save debug log',
+                iconSize: 17,
+                onPressed: c.logs.isEmpty || _savingDebugLog
+                    ? null
+                    : _saveDebugLog,
+                icon: const Icon(Icons.save_alt_outlined),
+              ),
               IconButton(
                 tooltip: 'Clear command log',
                 iconSize: 17,

@@ -9,6 +9,7 @@ import 'package:ptz_control/models/camera_preset.dart';
 class _UiController extends PtzController {
   int stopCount = 0;
   final commands = <List<int>>[];
+  final recalled = <int>[];
   @override
   bool get canControl => true;
   @override
@@ -39,10 +40,14 @@ class _UiController extends PtzController {
   }
 
   @override
+  Future<bool> recallPreset(int slot) async {
+    recalled.add(slot);
+    return true;
+  }
+
+  @override
   Future<bool> savePreset(int slot, String name) async {
-    selected = selected!.withPresets([
-      CameraPreset(slot: slot, name: name, pan: 1200, tilt: -800, zoom: 16384),
-    ]);
+    selected = selected!.withPresets([CameraPreset(slot: slot, name: name)]);
     cameras = [selected!];
     notifyListeners();
     return true;
@@ -213,6 +218,10 @@ void main() {
         matching: find.byType(Checkbox),
       );
       expect(tester.getTopLeft(apertureCheckbox).dx, closeTo(200, .1));
+      expect(tester.widget<Checkbox>(apertureCheckbox).onChanged, isNull);
+      await tester.tap(find.text('Save aperture with preset'));
+      await tester.pump();
+      expect(tester.widget<Checkbox>(apertureCheckbox).value, false);
       expect(
         tester.widget<Text>(find.text('Save aperture with preset')).textAlign,
         TextAlign.start,
@@ -225,6 +234,8 @@ void main() {
       for (var slot = 1; slot <= 9; slot++) {
         expect(find.byKey(ValueKey('preset-$slot')), findsOneWidget);
       }
+      await tester.tap(find.byKey(const ValueKey('preset-9')));
+      expect(c.recalled, [9]);
       final selector = tester.getRect(
         find.byType(DropdownButtonFormField<String>),
       );
@@ -244,6 +255,17 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('preset-2')));
       await tester.pumpAndSettle();
       expect(find.text('Save preset 2'), findsOneWidget);
+      const manualMessage =
+          'Manual exposure mode enabled. Exposure and image settings are also saved.';
+      expect(find.text(manualMessage), findsNothing);
+      c.exposureMode = 3;
+      c.notifyListeners();
+      await tester.pumpAndSettle();
+      expect(find.text(manualMessage), findsOneWidget);
+      expect(
+        tester.getRect(find.text(manualMessage)).bottom,
+        lessThan(tester.getRect(find.byKey(const Key('preset-name'))).top),
+      );
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(find.text('Save preset 2'), findsNothing);

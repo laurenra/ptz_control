@@ -31,17 +31,20 @@ The computer or phone must be able to reach the camera's network. Enable VISCA U
 - Enable **Sync pan/tilt** to link the two speed dropdowns. Both use the shared range **1–20** while linked; enabling sync clamps an existing pan speed above 20 to 20. Unchecking sync restores independent controls and pan’s full 1–24 range.
 - The narrow zoom −/+ and focus near/far buttons to the right of the speed dropdowns are also hold controls. Manual focus becomes available when a camera inquiry confirms manual focus mode. Set the mode on **Image**.
 - **Image** sends exposure mode, aperture/iris, shutter, gain, white balance, red/blue gain, and autofocus commands. Queried raw decimal values appear to the right of the aperture, shutter, gain, red gain, and blue gain step buttons; unavailable values show a dash. Triggering one-push white balance requires a Yes/Cancel confirmation. Select Manual or the appropriate priority mode before adjusting exposure, and Manual white balance before adjusting color gains. Mode dropdowns show the last requested choice, not confirmed camera settings. The focus label is read from the camera.
-- The overflow menu offers **Debug console**, **Navigation on left**, **Reconnect camera**, and help. The console keeps the latest 200 events with timestamps, command descriptions, camera endpoint, and complete TX/RX hex bytes, including Sony headers. Clear it or hide it at any time. It is hidden on launch.
+- The overflow menu offers **Debug console**, **Navigation on left**, **Reconnect camera**, and help. The console keeps the latest 200 events with timestamps, command descriptions, camera endpoint, and complete TX/RX hex bytes, including Sony headers. Use the save icon to export the current events to a UTF-8 `.txt` file through the system save dialog. The export preserves console order (newest first) and uses full UTC timestamps. It captures the events present when Save is pressed, even if polling continues. Clear it or hide it at any time. It is hidden on launch.
 
 ## Presets
 
-Each camera has nine app-managed preset slots, initially numbered 1–9. Names and snapshots persist with that camera’s configuration, including when its name or network settings are edited. They do not use or overwrite the camera’s built-in preset memory and are local to this device.
+Each camera has nine preset buttons, initially numbered 1–9. They use the camera’s built-in VISCA preset memory. Button 1 maps to VISCA memory address 0, through button 9 at address 8. Only the display names are stored locally with the camera’s configuration.
 
-- Move the camera to the desired shot. Enable **Save preset**, then press a preset button. Enter a name of up to **40 characters on two lines**, for example `2 Podium` / `Extra Wide`. **Save** queries fresh pan, tilt, and zoom positions and stores the snapshot. **Cancel** or **Escape** closes the dialog without changing the preset. Saving an occupied slot replaces its name and snapshot.
-- Uncheck **Save preset** to recall shots. Pressing an empty slot explains how to save it and sends no movement command.
-- Enable **Save aperture with preset** before saving to also query and store the current iris position. If the camera does not provide that value, saving fails visibly and leaves any existing preset intact. With the option unchecked, a replacement snapshot stores PTZ only.
-- A preset containing an aperture always restores that stored aperture when recalled, regardless of the checkbox’s current state. Recall preserves Manual or Iris Priority exposure; otherwise it switches to **Iris Priority** before applying the saved iris value. This is needed for the camera to hold that aperture. Presets without an aperture leave exposure settings alone.
-- Recall waits for each command’s completion before sending the next: exposure mode if needed, aperture if present, pan/tilt, then zoom. Other camera controls are disabled during the operation; the center **Stop** remains available. Stop, changing tabs/cameras, or backgrounding the app cancels the remaining recall steps. Stop commands interrupt a pending completion wait immediately. A preset command can wait up to 30 seconds for physical movement to finish.
+- Move the camera to the desired shot. Enable **Save preset**, then press a preset button. Enter a name of up to **40 characters on two lines**, for example `2 Podium` / `Extra Wide`. **Save** sends VISCA Memory Set and waits for camera completion before storing the local name. Saving replaces that preset in the camera. **Cancel** or **Escape** closes the dialog without sending a save command.
+- When the queried exposure mode is **Manual**, the dialog shows **“Manual exposure mode enabled. Exposure and image settings are also saved.”** above the name entry. The camera saves and restores the settings supported by its preset memory, including manual exposure and image settings; the app does not store or reapply individual values. The exact settings included depend on the camera model and its preset configuration.
+- Uncheck **Save preset** to recall shots. Every preset button sends VISCA Memory Recall, even without a locally saved name, so presets configured outside this app can be recalled. The camera reports any unsupported or empty slots.
+- **Save aperture with preset** is disabled and unchecked for now. It does not add commands or change the camera’s native preset behavior.
+- Recall waits up to 30 seconds for camera completion. Other camera controls are disabled during the operation; the center **Stop** remains available. Stop, changing tabs/cameras, or backgrounding the app interrupts a pending recall wait and sends movement stops. Telemetry refreshes after recall.
+- Existing local preset names are retained, but old app-managed PTZ/aperture snapshots are no longer used or automatically uploaded. Save the desired shots to camera memory before relying on those names. If local name storage fails after the camera has saved a preset, a message explains that the camera save succeeded and the name is available only for the current session.
+
+The memory commands and zero-based numbering follow the [Sony VISCA command list](https://pro.sony/support/res/manuals/5053/f48354480e724f0aef3d45d2e1eeab63/50531551M.pdf), preset commands on page 18.
 
 The compact Control page places the refresh button next to camera selection, shows `PAN: value`, `TILT: value`, and `ZOOM: value` on one status line, and keeps the nine presets and save controls visible in a 400 × 800 workspace with bottom navigation. Smaller windows, side navigation at narrow widths, and the optional debug console use scrolling as needed.
 
@@ -59,7 +62,7 @@ References: [Sony VISCA command list and IP protocol](https://pro.sony/support/r
 
 ## Code and checks
 
-- `lib/models/camera.dart` and `camera_preset.dart`: validated camera configuration, transport choice, and named PTZ/aperture snapshots.
+- `lib/models/camera.dart` and `camera_preset.dart`: validated camera configuration, transport choice, and local names for camera memory presets.
 - `lib/services/camera_store.dart`: local configuration persistence.
 - `lib/services/visca_protocol.dart`: packet encoding, framing, and position decoding.
 - `lib/services/visca_client.dart`: UDP lifecycle, request serialization, response validation, logging, completion handling, and stop priority.
@@ -72,4 +75,4 @@ flutter test
 flutter build macos --debug
 ```
 
-Tests cover packet encoding/ranges, signed telemetry, configuration persistence and validation, raw/Sony local UDP peers, source filtering, stop priority, held-button cancellation, speed synchronization, two-line preset names and cancellation, fresh preset snapshots, aperture restoration, failed-save preservation, interrupted recalls, and compact layouts with both navigation placements. The macOS debug app has been built and launched locally; other OS builds and physical-camera checks remain to be performed on their target hardware.
+Tests cover packet encoding/ranges, signed telemetry, configuration persistence and validation, raw/Sony local UDP peers, source filtering, stop priority, held-button cancellation, speed synchronization, two-line preset names and cancellation, camera-memory preset save/recall, manual-exposure messaging, legacy name migration, camera-save failures, local name-storage failures, interrupted recalls, and compact layouts with both navigation placements. The macOS debug app has been built and launched locally; other OS builds and physical-camera checks remain to be performed on their target hardware.

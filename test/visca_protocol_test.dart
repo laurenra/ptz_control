@@ -3,6 +3,15 @@ import 'package:ptz_control/models/camera.dart';
 import 'package:ptz_control/services/visca_protocol.dart';
 
 void main() {
+  test('camera preset commands use zero-based memory addresses', () {
+    expect(Visca.storePreset(1), [0x81, 1, 4, 0x3f, 1, 0, 255]);
+    expect(Visca.storePreset(9), [0x81, 1, 4, 0x3f, 1, 8, 255]);
+    expect(Visca.recallPreset(1), [0x81, 1, 4, 0x3f, 2, 0, 255]);
+    expect(Visca.recallPreset(9), [0x81, 1, 4, 0x3f, 2, 8, 255]);
+    expect(() => Visca.storePreset(0), throwsRangeError);
+    expect(() => Visca.recallPreset(10), throwsRangeError);
+  });
+
   test('encodes direction and speed boundaries', () {
     expect(Visca.drive(24, 20, 1, 2), [0x81, 1, 6, 1, 24, 20, 1, 2, 255]);
     expect(() => Visca.drive(0, 1, 1, 1), throwsRangeError);

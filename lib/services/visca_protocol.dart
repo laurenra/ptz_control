@@ -27,6 +27,15 @@ class Visca {
     0xff,
   ];
   static const home = [0x81, 1, 6, 4, 0xff];
+  // User-facing presets 1–9 correspond to VISCA memory addresses 0–8.
+  static List<int> storePreset(int slot) => _memory(1, slot);
+  static List<int> recallPreset(int slot) => _memory(2, slot);
+
+  static List<int> _memory(int operation, int slot) {
+    RangeError.checkValueInInterval(slot, 1, 9, 'slot');
+    return camera(0x3f, [operation, slot - 1]);
+  }
+
   static const panTiltInquiry = [0x81, 9, 6, 0x12, 0xff];
   static const zoomInquiry = [0x81, 9, 4, 0x47, 0xff];
   static const focusModeInquiry = [0x81, 9, 4, 0x38, 0xff];

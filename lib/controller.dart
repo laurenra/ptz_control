@@ -24,7 +24,6 @@ class PtzController extends ChangeNotifier {
   bool debug = false;
   bool syncPanTilt = false;
   bool savePresetMode = false;
-  bool saveApertureWithPreset = false;
   bool presetBusy = false;
   bool _recalling = false;
   int _presetGeneration = 0;
@@ -348,11 +347,6 @@ class PtzController extends ChangeNotifier {
     _notify();
   }
 
-  void setSaveAperture(bool value) {
-    saveApertureWithPreset = value;
-    _notify();
-  }
-
   CameraPreset? preset(int slot) {
     for (final p in selected?.presets ?? <CameraPreset>[]) {
       if (p.slot == slot) return p;
@@ -400,52 +394,26 @@ class PtzController extends ChangeNotifier {
   Future<bool> savePreset(int slot, String name) async {
     if (!canOperate || moving || saving || selected == null) return false;
     final invalid = CameraPreset.validateName(name);
-    if (invalid != null || slot < 1 || slot > 9 || !_storageHealthy) {
-      message = invalid ?? 'Preset cannot be saved to this slot or storage.';
+    if (invalid != null || slot < 1 || slot > 9) {
+      message = invalid ?? 'Preset cannot be saved to this slot.';
       _notify();
       return false;
     }
     final camera = selected!;
     final client = _client!;
     final generation = ++_presetGeneration;
-    final includeAperture = saveApertureWithPreset;
     presetBusy = true;
     message = null;
     _notify();
     try {
-      final pt = await _presetRequest(
+      await _presetRequest(
         client,
         generation,
-        'Read preset pan / tilt',
-        Visca.panTiltInquiry,
+        'Save camera preset $slot',
+        Visca.storePreset(slot),
+        completion: true,
       );
-      final z = await _presetRequest(
-        client,
-        generation,
-        'Read preset zoom',
-        Visca.zoomInquiry,
-      );
-      int? iris;
-      if (includeAperture) {
-        final reply = await _presetRequest(
-          client,
-          generation,
-          'Read preset aperture',
-          Visca.apertureInquiry,
-        );
-        iris = Visca.nibbles(reply.sublist(2, 6));
-        if (iris > 255) {
-          throw const FormatException('Invalid aperture position');
-        }
-      }
-      final saved = CameraPreset(
-        slot: slot,
-        name: name.trim(),
-        pan: Visca.nibbles(pt.sublist(2, 6), signed: true),
-        tilt: Visca.nibbles(pt.sublist(6, 10), signed: true),
-        zoom: Visca.nibbles(z.sublist(2, 6)),
-        aperture: iris,
-      );
+      final saved = CameraPreset(slot: slot, name: name.trim());
       final updatedCamera = camera.withPresets(
         [...camera.presets.where((p) => p.slot != slot), saved]
           ..sort((a, b) => a.slot.compareTo(b.slot)),
@@ -453,15 +421,21 @@ class PtzController extends ChangeNotifier {
       final updated = cameras
           .map((c) => c.id == camera.id ? updatedCamera : c)
           .toList();
-      await _store.save(updated);
-      if (_disposed) return false;
-      cameras = updated;
-      if (selected?.id == camera.id) {
-        selected = updatedCamera;
-        pan = saved.pan;
-        tilt = saved.tilt;
-        zoom = saved.zoom;
+      // The camera has already stored the preset. A local name-storage failure
+      // must not report that the camera save failed or invite an accidental retry.
+      String? nameWarning;
+      try {
+        if (!_storageHealthy) throw StateError('Setup storage is unavailable');
+        await _store.save(updated);
+      } catch (_) {
+        nameWarning =
+            'Preset $slot was saved in the camera, but its name could '
+            'not be saved locally. The name will be kept for this session.';
       }
+      if (_disposed) return true;
+      cameras = updated;
+      if (selected?.id == camera.id) selected = updatedCamera;
+      if (_presetActive(generation, client)) message = nameWarning;
       return true;
     } catch (error) {
       if (_presetActive(generation, client)) {
@@ -475,14 +449,7 @@ class PtzController extends ChangeNotifier {
   }
 
   Future<bool> recallPreset(int slot) async {
-    if (!canOperate || moving) return false;
-    final saved = preset(slot);
-    if (saved == null) {
-      message =
-          'Preset $slot is empty. Check Save preset to store the current position.';
-      _notify();
-      return false;
-    }
+    if (!canOperate || moving || slot < 1 || slot > 9) return false;
     final client = _client!;
     final generation = ++_presetGeneration;
     presetBusy = true;
@@ -490,43 +457,11 @@ class PtzController extends ChangeNotifier {
     message = null;
     _notify();
     try {
-      if (saved.aperture != null) {
-        final mode = await _presetRequest(
-          client,
-          generation,
-          'Read exposure mode',
-          Visca.exposureModeInquiry,
-        );
-        if (![3, 11].contains(mode[2])) {
-          await _presetRequest(
-            client,
-            generation,
-            'Use iris-priority exposure',
-            Visca.camera(0x39, [11]),
-            completion: true,
-          );
-        }
-        await _presetRequest(
-          client,
-          generation,
-          'Recall preset aperture',
-          Visca.absoluteAperture(saved.aperture!),
-          completion: true,
-        );
-      }
       await _presetRequest(
         client,
         generation,
-        'Recall preset $slot pan / tilt',
-        Visca.absolutePanTilt(saved.pan, saved.tilt, panSpeed, tiltSpeed),
-        completion: true,
-        motion: true,
-      );
-      await _presetRequest(
-        client,
-        generation,
-        'Recall preset $slot zoom',
-        Visca.absoluteZoom(saved.zoom),
+        'Recall camera preset $slot',
+        Visca.recallPreset(slot),
         completion: true,
         motion: true,
       );
