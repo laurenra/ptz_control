@@ -10,6 +10,9 @@ class _UiController extends PtzController {
   int stopCount = 0;
   final commands = <List<int>>[];
   final recalled = <int>[];
+  int imageRefreshes = 0;
+  int controlRefreshes = 0;
+  int fullRefreshes = 0;
   @override
   bool get canControl => true;
   @override
@@ -46,6 +49,21 @@ class _UiController extends PtzController {
   }
 
   @override
+  Future<void> refreshImageSettings() async {
+    imageRefreshes++;
+  }
+
+  @override
+  Future<void> refreshControlStatus() async {
+    controlRefreshes++;
+  }
+
+  @override
+  Future<void> refresh() async {
+    fullRefreshes++;
+  }
+
+  @override
   Future<bool> savePreset(int slot, String name) async {
     selected = selected!.withPresets([CameraPreset(slot: slot, name: name)]);
     cameras = [selected!];
@@ -68,6 +86,22 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Image'));
     await tester.pumpAndSettle();
+    expect(c.imageRefreshes, 1);
+    final exposureDropdown = find.descendant(
+      of: find.byWidgetPredicate(
+        (w) => w is InputDecorator && w.decoration.labelText == 'Exposure mode',
+      ),
+      matching: find.byType(DropdownButton<int>),
+    );
+    expect(tester.widget<DropdownButton<int>>(exposureDropdown).value, 0x0a);
+    c.exposureMode = 3;
+    c.notifyListeners();
+    await tester.pump();
+    expect(tester.widget<DropdownButton<int>>(exposureDropdown).value, 3);
+    // Rebuilds and tapping the active page do not repeat its entry queries.
+    await tester.tap(find.text('Image'));
+    await tester.pumpAndSettle();
+    expect(c.imageRefreshes, 1);
     for (final row in [
       (11, '17', 'Aperture / iris: Open'),
       (10, '22', 'Shutter speed: Faster'),
@@ -116,6 +150,16 @@ void main() {
     expect(c.commands, [
       [0x81, 1, 4, 0x10, 5, 0xff],
     ]);
+    await tester.tap(find.text('Cameras'));
+    await tester.pumpAndSettle();
+    expect(c.imageRefreshes, 1);
+    expect(c.controlRefreshes, 0);
+    await tester.tap(find.text('Control'));
+    await tester.pumpAndSettle();
+    expect(c.controlRefreshes, 1);
+    await tester.tap(find.byTooltip('Refresh camera status'));
+    await tester.pumpAndSettle();
+    expect(c.fullRefreshes, 1);
     await tester.pumpWidget(const SizedBox());
   });
 

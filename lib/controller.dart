@@ -30,7 +30,8 @@ class PtzController extends ChangeNotifier {
   bool sideNavigation = false;
   bool _disposed = false;
   bool _paused = false;
-  bool _polling = false;
+  Future<void>? _queryFuture;
+  final Set<int> _pendingQueries = {};
   bool _storageHealthy = true;
   String? message;
   int panSpeed = 8, tiltSpeed = 6, zoomSpeed = 3, focusSpeed = 3;
@@ -86,7 +87,7 @@ class PtzController extends ChangeNotifier {
       if (_paused || _client == null || _recalling) return;
       final reference = lastReply ?? _openedAt;
       if (reference != null &&
-          DateTime.now().difference(reference).inSeconds >= 5 &&
+          DateTime.now().difference(reference).inSeconds >= 15 &&
           connection != CameraConnection.offline) {
         connection = CameraConnection.offline;
         pan = tilt = zoom = null;
@@ -109,6 +110,7 @@ class PtzController extends ChangeNotifier {
     _cancelPreset();
     _client?.close();
     _client = null;
+    await _queryFuture;
     selected = camera;
     pan = tilt = zoom = null;
     autofocus = null;
@@ -154,8 +156,8 @@ class PtzController extends ChangeNotifier {
       }
       _openedAt = DateTime.now();
       _pollTimer = Timer.periodic(
-        const Duration(seconds: 2),
-        (_) => unawaited(refresh()),
+        const Duration(seconds: 5),
+        (_) => unawaited(_query([0x12, 0x47], scheduled: true)),
       );
     } catch (error) {
       client.close();
@@ -169,101 +171,130 @@ class PtzController extends ChangeNotifier {
     await refresh();
   }
 
-  Future<void> refresh() async {
-    if (!canOperate || _polling || moving) return;
-    final client = _client!;
-    _polling = true;
+  /// A camera selection or explicit refresh reads every displayed setting.
+  Future<void> refresh() =>
+      _query([0x12, 0x47, 0x38, 0x39, 0x35, ...Visca.imageValueInquiries.keys]);
+
+  /// Read only the settings displayed on the Image page, once on entry.
+  Future<void> refreshImageSettings() =>
+      _query([0x38, 0x39, 0x35, ...Visca.imageValueInquiries.keys]);
+
+  /// The Control page displays exposure and white balance mode status.
+  Future<void> refreshControlStatus() => _query([0x39, 0x35]);
+
+  Future<void> _query(Iterable<int> registers, {bool scheduled = false}) {
+    if (!canOperate || moving || _client == null || _disposed) {
+      return Future.value();
+    }
+    // Automatic ticks never extend an existing user-requested refresh.
+    if (scheduled && _queryFuture != null) return Future.value();
+    _pendingQueries.addAll(registers);
+    return _queryFuture ??= _drainQueries(_client!);
+  }
+
+  Future<void> _drainQueries(ViscaClient client) async {
     try {
-      final position = await client.send(
-        'Read pan / tilt position',
-        Visca.panTiltInquiry,
-      );
-      if (_client != client || _disposed || _paused) return;
-      if (position != null && position.length == 11) {
-        try {
-          pan = Visca.nibbles(position.sublist(2, 6), signed: true);
-          tilt = Visca.nibbles(position.sublist(6, 10), signed: true);
-        } on FormatException {
-          message = 'Invalid position data received';
-        }
-      }
-      if (moving || presetBusy) return;
-      final z = await client.send('Read zoom position', Visca.zoomInquiry);
-      if (_client != client || _disposed || _paused) return;
-      if (z != null && z.length == 7) {
-        try {
-          zoom = Visca.nibbles(z.sublist(2, 6));
-        } on FormatException {
-          message = 'Invalid zoom data received';
-        }
-      }
-      if (moving || presetBusy) return;
-      final focus = await client.send(
-        'Read autofocus mode',
-        Visca.focusModeInquiry,
-      );
-      if (_client != client || _disposed || _paused) return;
-      if (focus != null && focus.length == 4 && [2, 3].contains(focus[2])) {
-        autofocus = focus[2] == 2;
-      }
-      _notify();
-      if (moving || presetBusy) return;
-      final exposure = await client.send(
-        'Read exposure mode',
-        Visca.exposureModeInquiry,
-      );
-      if (_client != client || _disposed || _paused) return;
-      exposureMode = exposure != null && exposure.length == 4
-          ? exposure[2]
-          : null;
-      _notify();
-      if (moving || presetBusy) return;
-      final balance = await client.send(
-        'Read white balance mode',
-        Visca.whiteBalanceModeInquiry,
-      );
-      if (_client != client || _disposed || _paused) return;
-      whiteBalanceMode = balance != null && balance.length == 4
-          ? balance[2]
-          : null;
-      _notify();
-      for (final inquiry in Visca.imageValueInquiries.entries) {
-        if (moving || presetBusy) return;
-        final reply = await client.send(
-          'Read ${inquiry.value}',
-          Visca.imageValueInquiry(inquiry.key),
-        );
-        if (_client != client || _disposed || _paused) return;
-        int? value;
-        if (reply != null && reply.length == 7) {
-          try {
-            value = Visca.nibbles(reply.sublist(2, 6));
-          } on FormatException {
-            message = 'Invalid ${inquiry.value} data received';
-          }
-        }
-        imageValues[inquiry.key] = value;
-        _notify();
+      while (_pendingQueries.isNotEmpty &&
+          _client == client &&
+          !_disposed &&
+          !_paused &&
+          canOperate &&
+          !moving) {
+        final register = _pendingQueries.first;
+        _pendingQueries.remove(register);
+        await _readValue(client, register);
       }
     } finally {
-      _polling = false;
+      _pendingQueries.clear();
+      _queryFuture = null;
     }
+  }
+
+  Future<void> _readValue(ViscaClient client, int register) async {
+    final (description, inquiry) = switch (register) {
+      0x12 => ('pan / tilt position', Visca.panTiltInquiry),
+      0x47 => ('zoom position', Visca.zoomInquiry),
+      0x38 => ('autofocus mode', Visca.focusModeInquiry),
+      0x39 => ('exposure mode', Visca.exposureModeInquiry),
+      0x35 => ('white balance mode', Visca.whiteBalanceModeInquiry),
+      _ => (
+        Visca.imageValueInquiries[register]!,
+        Visca.imageValueInquiry(register),
+      ),
+    };
+    final reply = await client.send('Read $description', inquiry);
+    if (_client != client || _disposed || _paused) return;
+    try {
+      switch (register) {
+        case 0x12:
+          if (reply != null && reply.length == 11) {
+            pan = Visca.nibbles(reply.sublist(2, 6), signed: true);
+            tilt = Visca.nibbles(reply.sublist(6, 10), signed: true);
+          }
+        case 0x47:
+          if (reply != null && reply.length == 7) {
+            zoom = Visca.nibbles(reply.sublist(2, 6));
+          }
+        case 0x38:
+          autofocus =
+              reply != null && reply.length == 4 && [2, 3].contains(reply[2])
+              ? reply[2] == 2
+              : null;
+        case 0x39:
+          exposureMode = reply != null && reply.length == 4 ? reply[2] : null;
+        case 0x35:
+          whiteBalanceMode = reply != null && reply.length == 4
+              ? reply[2]
+              : null;
+        default:
+          imageValues[register] = null;
+          if (reply != null && reply.length == 7) {
+            imageValues[register] = Visca.nibbles(reply.sublist(2, 6));
+          }
+      }
+    } on FormatException {
+      message = 'Invalid $description data received';
+    }
+    _notify();
+  }
+
+  List<int> _settingsChangedBy(List<int> bytes) {
+    if (bytes.length < 5 || bytes[1] != 1 || bytes[2] != 4) return const [];
+    return switch (bytes[3]) {
+      0x38 => [0x38],
+      0x39 => [0x39],
+      0x35 => [0x35],
+      0x0b || 0x4b => [0x4b],
+      0x0a || 0x4a => [0x4a],
+      0x0c || 0x4c => [0x4c],
+      0x03 || 0x43 => [0x43],
+      0x04 || 0x44 => [0x44],
+      // One-push balance can change both color gains as well as mode status.
+      0x10 => [0x35, 0x43, 0x44],
+      _ => const [],
+    };
   }
 
   Future<void> command(String description, List<int> bytes) async {
     if (!canOperate || moving) return;
     message = null;
     final client = _client!;
+    final changedSettings = _settingsChangedBy(bytes);
     final reply = await client.send(
       description,
       bytes,
       motion: bytes.length > 3 && bytes[2] == 6 && bytes[3] == 4,
+      waitForCompletion: changedSettings.isNotEmpty,
+      replyTimeout: bytes.length > 3 && bytes[2] == 4 && bytes[3] == 0x10
+          ? const Duration(seconds: 10)
+          : null,
     );
     if (_client != client || _disposed) return;
     if (reply == null && message == null) {
       message = 'No acknowledgement: $description';
     }
     _notify();
+    if (changedSettings.isNotEmpty) await _query(changedSettings);
   }
 
   bool startMotion(
@@ -477,7 +508,6 @@ class PtzController extends ChangeNotifier {
         _recalling = false;
       }
       _notify();
-      if (canOperate) unawaited(refresh());
     }
   }
 

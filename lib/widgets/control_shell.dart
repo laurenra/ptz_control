@@ -53,9 +53,13 @@ class _ControlShellState extends State<ControlShell>
     super.dispose();
   }
 
-  void _navigate(int index) {
-    unawaited(c.endMotion());
+  Future<void> _navigate(int index) async {
+    if (index == _tab) return;
+    await c.endMotion();
+    if (!mounted) return;
     setState(() => _tab = index);
+    if (index == 0) await c.refreshControlStatus();
+    if (index == 1) await c.refreshImageSettings();
   }
 
   Future<void> _edit([Camera? camera]) async {
@@ -1102,30 +1106,37 @@ class _ControlShellState extends State<ControlShell>
       auto ? 'Autofocus on' : 'Manual focus',
       Visca.camera(0x38, [auto ? 2 : 3]),
     );
-    await c.refresh();
   }
 
-  Widget _mode(String label, Map<int, String> values, int command) =>
-      DropdownButtonFormField<int>(
-        isExpanded: true,
-        decoration: InputDecoration(labelText: label),
-        hint: const Text('Send mode…', style: TextStyle(fontSize: 13)),
-        items: values.entries
-            .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
-            .toList(),
-        onChanged: c.canControl
-            ? (v) {
-                if (v != null) {
-                  unawaited(
-                    c.command(
-                      '$label: ${values[v]}',
-                      Visca.camera(command, [v]),
-                    ),
-                  );
+  Widget _mode(String label, Map<int, String> values, int command) {
+    final mode = command == 0x39 ? c.exposureMode : c.whiteBalanceMode;
+    return InputDecorator(
+      decoration: InputDecoration(labelText: label),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int>(
+          isExpanded: true,
+          isDense: true,
+          value: values.containsKey(mode) ? mode : null,
+          hint: const Text('Unknown', style: TextStyle(fontSize: 13)),
+          items: values.entries
+              .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+              .toList(),
+          onChanged: c.canOperate && !c.moving
+              ? (v) {
+                  if (v != null) {
+                    unawaited(
+                      c.command(
+                        '$label: ${values[v]}',
+                        Visca.camera(command, [v]),
+                      ),
+                    );
+                  }
                 }
-              }
-            : null,
-      );
+              : null,
+        ),
+      ),
+    );
+  }
 
   Widget _stepSetting(
     String label,
