@@ -16,10 +16,19 @@ class CommandLog {
 }
 
 class _Request {
-  _Request(this.description, this.payload, this.motion);
+  _Request(
+    this.description,
+    this.payload,
+    this.motion,
+    this.waitForCompletion,
+    this.replyTimeout,
+  );
   final String description;
   final List<int> payload;
   final bool motion;
+  final bool waitForCompletion;
+  final Duration? replyTimeout;
+  int? socket;
   final result = Completer<List<int>?>();
   Completer<List<int>?>? reply;
   int? sequence;
@@ -87,9 +96,17 @@ class ViscaClient {
     List<int> payload, {
     bool priority = false,
     bool motion = false,
+    bool waitForCompletion = false,
+    Duration? replyTimeout,
   }) {
     if (_closed) return Future.value(null);
-    final request = _Request(description, List.of(payload), motion);
+    final request = _Request(
+      description,
+      List.of(payload),
+      motion,
+      waitForCompletion,
+      replyTimeout,
+    );
     if (priority) {
       // A release must also cancel movement that has not reached the wire.
       final cancelled = _queue.where((r) => r.motion).toList();
@@ -131,7 +148,7 @@ class ViscaClient {
           }
           onLog(CommandLog('TX', request.description, camera.endpoint, bytes));
           final reply = await request.reply!.future.timeout(
-            timeout,
+            request.replyTimeout ?? timeout,
             onTimeout: () {
               onLog(
                 CommandLog(
@@ -242,11 +259,17 @@ class ViscaClient {
       // In raw UDP, inquiries have no identifiers. Match their known reply shape.
       final expectedLength = active.payload[3] == 0x12
           ? 11
-          : active.payload[3] == 0x47
+          : [0x47, 0x4b].contains(active.payload[3])
           ? 7
           : 4;
+      if (!inquiry && kind == 0x40) active.socket = payload[1] & 15;
+      final completion =
+          kind == 0x50 &&
+          payload.length == 3 &&
+          (active.socket == null || active.socket == (payload[1] & 15));
       if (kind == 0x60 ||
-          (!inquiry && (kind == 0x40 || payload.length == 3)) ||
+          (!inquiry &&
+              (completion || (kind == 0x40 && !active.waitForCompletion))) ||
           (inquiry &&
               kind == 0x50 &&
               payload[1] == 0x50 &&

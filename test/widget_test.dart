@@ -15,7 +15,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
-    expect(find.text('Take control'), findsOneWidget);
+    expect(find.text('Take control'), findsNothing);
+    expect(find.text('CAMERA WORKSPACE'), findsNothing);
     expect(find.text('Add camera'), findsOneWidget);
     expect(find.text('UDP CONSOLE'), findsNothing);
     // Layout exceptions are reported directly by the test binding.
@@ -63,7 +64,7 @@ void main() {
         await tester.pumpWidget(const MyApp());
         await tester.pumpAndSettle();
         expect(find.text('Stage camera'), findsOneWidget);
-        expect(find.text('Pan speed'), findsOneWidget);
+        expect(find.text('Pan'), findsOneWidget);
         expect(find.byTooltip('Pan left · hold to move'), findsOneWidget);
         // Layout exceptions are reported directly by the test binding.
         await tester.tap(find.byTooltip('More options'));

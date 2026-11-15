@@ -31,6 +31,50 @@ class Visca {
   static const zoomInquiry = [0x81, 9, 4, 0x47, 0xff];
   static const focusModeInquiry = [0x81, 9, 4, 0x38, 0xff];
 
+  static const apertureInquiry = [0x81, 9, 4, 0x4b, 0xff];
+  static const exposureModeInquiry = [0x81, 9, 4, 0x39, 0xff];
+
+  static List<int> positionNibbles(int value, {bool signed = false}) {
+    RangeError.checkValueInInterval(
+      value,
+      signed ? -32768 : 0,
+      signed ? 32767 : 65535,
+      'position',
+    );
+    final unsigned = value & 0xffff;
+    return [
+      for (final shift in [12, 8, 4, 0]) (unsigned >> shift) & 15,
+    ];
+  }
+
+  static List<int> absolutePanTilt(
+    int pan,
+    int tilt,
+    int panSpeed,
+    int tiltSpeed,
+  ) {
+    RangeError.checkValueInInterval(panSpeed, 1, 24, 'pan speed');
+    RangeError.checkValueInInterval(tiltSpeed, 1, 20, 'tilt speed');
+    return [
+      0x81,
+      1,
+      6,
+      2,
+      panSpeed,
+      tiltSpeed,
+      ...positionNibbles(pan, signed: true),
+      ...positionNibbles(tilt, signed: true),
+      0xff,
+    ];
+  }
+
+  static List<int> absoluteZoom(int zoom) =>
+      camera(0x47, positionNibbles(zoom));
+  static List<int> absoluteAperture(int aperture) {
+    RangeError.checkValueInInterval(aperture, 0, 255, 'aperture');
+    return camera(0x4b, positionNibbles(aperture));
+  }
+
   static Uint8List frame(List<int> payload, int sequence) {
     final bytes = Uint8List(8 + payload.length);
     final header = ByteData.sublistView(bytes);

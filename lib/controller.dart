@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'models/camera.dart';
+import 'models/camera_preset.dart';
 import 'services/camera_store.dart';
 import 'services/visca_client.dart';
 import 'services/visca_protocol.dart';
@@ -21,6 +22,12 @@ class PtzController extends ChangeNotifier {
   bool saving = false;
   bool switching = false;
   bool debug = false;
+  bool syncPanTilt = false;
+  bool savePresetMode = false;
+  bool saveApertureWithPreset = false;
+  bool presetBusy = false;
+  bool _recalling = false;
+  int _presetGeneration = 0;
   bool sideNavigation = false;
   bool _disposed = false;
   bool _paused = false;
@@ -39,6 +46,7 @@ class PtzController extends ChangeNotifier {
   Timer? _watchdog;
 
   bool get canControl => _client != null && !switching && !_paused;
+  bool get canOperate => canControl && !presetBusy;
   bool get moving => _motionClient != null;
   String get statusLabel => switch (connection) {
     CameraConnection.none => 'No camera selected',
@@ -65,7 +73,7 @@ class PtzController extends ChangeNotifier {
     if (!_disposed && cameras.isNotEmpty) await select(cameras.first);
     if (_disposed) return;
     _watchdog = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_paused || _client == null) return;
+      if (_paused || _client == null || _recalling) return;
       final reference = lastReply ?? _openedAt;
       if (reference != null &&
           DateTime.now().difference(reference).inSeconds >= 5 &&
@@ -86,6 +94,7 @@ class PtzController extends ChangeNotifier {
     _pollTimer?.cancel();
     _notify();
     await endMotion();
+    _cancelPreset();
     _client?.close();
     _client = null;
     selected = camera;
@@ -147,7 +156,7 @@ class PtzController extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    if (!canControl || _polling || moving) return;
+    if (!canOperate || _polling || moving) return;
     final client = _client!;
     _polling = true;
     try {
@@ -164,7 +173,7 @@ class PtzController extends ChangeNotifier {
           message = 'Invalid position data received';
         }
       }
-      if (moving) return;
+      if (moving || presetBusy) return;
       final z = await client.send('Read zoom position', Visca.zoomInquiry);
       if (_client != client || _disposed || _paused) return;
       if (z != null && z.length == 7) {
@@ -174,7 +183,7 @@ class PtzController extends ChangeNotifier {
           message = 'Invalid zoom data received';
         }
       }
-      if (moving) return;
+      if (moving || presetBusy) return;
       final focus = await client.send(
         'Read autofocus mode',
         Visca.focusModeInquiry,
@@ -190,7 +199,7 @@ class PtzController extends ChangeNotifier {
   }
 
   Future<void> command(String description, List<int> bytes) async {
-    if (!canControl || moving) return;
+    if (!canOperate || moving) return;
     message = null;
     final client = _client!;
     final reply = await client.send(
@@ -211,7 +220,7 @@ class PtzController extends ChangeNotifier {
     List<int> stop, {
     Object? owner,
   }) {
-    if (!canControl || moving) return false;
+    if (!canOperate || moving) return false;
     final client = _client!;
     _motionClient = client;
     _motionStop = stop;
@@ -224,6 +233,10 @@ class PtzController extends ChangeNotifier {
 
   Future<void> endMotion({Object? owner}) async {
     if (owner != null && owner != _motionOwner) return;
+    if (owner == null && _recalling) {
+      await stopAll();
+      return;
+    }
     final client = _motionClient;
     final stop = _motionStop;
     _motionClient = null;
@@ -236,11 +249,13 @@ class PtzController extends ChangeNotifier {
   }
 
   Future<void> stopAll() async {
-    if (!canControl) return;
+    if (_client == null) return;
+    _cancelPreset();
     _motionClient = null;
     _motionStop = null;
     _motionOwner = null;
     final client = _client!;
+    _notify();
     await Future.wait([
       client.send(
         'Stop pan / tilt',
@@ -256,9 +271,11 @@ class PtzController extends ChangeNotifier {
   void setSpeed(String axis, int value) {
     switch (axis) {
       case 'Pan':
-        panSpeed = value.clamp(1, 24);
+        panSpeed = value.clamp(1, syncPanTilt ? 20 : 24);
+        if (syncPanTilt) tiltSpeed = panSpeed;
       case 'Tilt':
         tiltSpeed = value.clamp(1, 20);
+        if (syncPanTilt) panSpeed = tiltSpeed;
       case 'Zoom':
         zoomSpeed = value.clamp(0, 7);
       case 'Focus':
@@ -267,8 +284,217 @@ class PtzController extends ChangeNotifier {
     _notify();
   }
 
+  void setSyncPanTilt(bool value) {
+    syncPanTilt = value;
+    if (value) panSpeed = tiltSpeed = panSpeed.clamp(1, 20);
+    _notify();
+  }
+
+  void setSavePresetMode(bool value) {
+    savePresetMode = value;
+    _notify();
+  }
+
+  void setSaveAperture(bool value) {
+    saveApertureWithPreset = value;
+    _notify();
+  }
+
+  CameraPreset? preset(int slot) {
+    for (final p in selected?.presets ?? <CameraPreset>[]) {
+      if (p.slot == slot) return p;
+    }
+    return null;
+  }
+
+  bool _presetActive(int generation, ViscaClient client) =>
+      !_disposed &&
+      !_paused &&
+      generation == _presetGeneration &&
+      _client == client;
+
+  void _cancelPreset() {
+    _presetGeneration++;
+    presetBusy = false;
+    _recalling = false;
+  }
+
+  Future<List<int>> _presetRequest(
+    ViscaClient client,
+    int generation,
+    String description,
+    List<int> bytes, {
+    bool completion = false,
+    bool motion = false,
+  }) async {
+    if (!_presetActive(generation, client)) {
+      throw StateError('Preset operation cancelled');
+    }
+    final reply = await client.send(
+      description,
+      bytes,
+      motion: motion,
+      waitForCompletion: completion,
+      replyTimeout: completion ? const Duration(seconds: 30) : null,
+    );
+    if (!_presetActive(generation, client)) {
+      throw StateError('Preset operation cancelled');
+    }
+    if (reply == null) throw StateError('No successful reply: $description');
+    return reply;
+  }
+
+  Future<bool> savePreset(int slot, String name) async {
+    if (!canOperate || moving || saving || selected == null) return false;
+    final invalid = CameraPreset.validateName(name);
+    if (invalid != null || slot < 1 || slot > 9 || !_storageHealthy) {
+      message = invalid ?? 'Preset cannot be saved to this slot or storage.';
+      _notify();
+      return false;
+    }
+    final camera = selected!;
+    final client = _client!;
+    final generation = ++_presetGeneration;
+    final includeAperture = saveApertureWithPreset;
+    presetBusy = true;
+    message = null;
+    _notify();
+    try {
+      final pt = await _presetRequest(
+        client,
+        generation,
+        'Read preset pan / tilt',
+        Visca.panTiltInquiry,
+      );
+      final z = await _presetRequest(
+        client,
+        generation,
+        'Read preset zoom',
+        Visca.zoomInquiry,
+      );
+      int? iris;
+      if (includeAperture) {
+        final reply = await _presetRequest(
+          client,
+          generation,
+          'Read preset aperture',
+          Visca.apertureInquiry,
+        );
+        iris = Visca.nibbles(reply.sublist(2, 6));
+        if (iris > 255) {
+          throw const FormatException('Invalid aperture position');
+        }
+      }
+      final saved = CameraPreset(
+        slot: slot,
+        name: name.trim(),
+        pan: Visca.nibbles(pt.sublist(2, 6), signed: true),
+        tilt: Visca.nibbles(pt.sublist(6, 10), signed: true),
+        zoom: Visca.nibbles(z.sublist(2, 6)),
+        aperture: iris,
+      );
+      final updatedCamera = camera.withPresets(
+        [...camera.presets.where((p) => p.slot != slot), saved]
+          ..sort((a, b) => a.slot.compareTo(b.slot)),
+      );
+      final updated = cameras
+          .map((c) => c.id == camera.id ? updatedCamera : c)
+          .toList();
+      await _store.save(updated);
+      if (_disposed) return false;
+      cameras = updated;
+      if (selected?.id == camera.id) {
+        selected = updatedCamera;
+        pan = saved.pan;
+        tilt = saved.tilt;
+        zoom = saved.zoom;
+      }
+      return true;
+    } catch (error) {
+      if (_presetActive(generation, client)) {
+        message = 'Preset was not saved: $error';
+      }
+      return false;
+    } finally {
+      if (generation == _presetGeneration) presetBusy = false;
+      _notify();
+    }
+  }
+
+  Future<bool> recallPreset(int slot) async {
+    if (!canOperate || moving) return false;
+    final saved = preset(slot);
+    if (saved == null) {
+      message =
+          'Preset $slot is empty. Check Save preset to store the current position.';
+      _notify();
+      return false;
+    }
+    final client = _client!;
+    final generation = ++_presetGeneration;
+    presetBusy = true;
+    _recalling = true;
+    message = null;
+    _notify();
+    try {
+      if (saved.aperture != null) {
+        final mode = await _presetRequest(
+          client,
+          generation,
+          'Read exposure mode',
+          Visca.exposureModeInquiry,
+        );
+        if (![3, 11].contains(mode[2])) {
+          await _presetRequest(
+            client,
+            generation,
+            'Use iris-priority exposure',
+            Visca.camera(0x39, [11]),
+            completion: true,
+          );
+        }
+        await _presetRequest(
+          client,
+          generation,
+          'Recall preset aperture',
+          Visca.absoluteAperture(saved.aperture!),
+          completion: true,
+        );
+      }
+      await _presetRequest(
+        client,
+        generation,
+        'Recall preset $slot pan / tilt',
+        Visca.absolutePanTilt(saved.pan, saved.tilt, panSpeed, tiltSpeed),
+        completion: true,
+        motion: true,
+      );
+      await _presetRequest(
+        client,
+        generation,
+        'Recall preset $slot zoom',
+        Visca.absoluteZoom(saved.zoom),
+        completion: true,
+        motion: true,
+      );
+      return true;
+    } catch (error) {
+      if (_presetActive(generation, client)) {
+        message = 'Preset recall did not finish: $error';
+      }
+      return false;
+    } finally {
+      if (generation == _presetGeneration) {
+        presetBusy = false;
+        _recalling = false;
+      }
+      _notify();
+      if (canOperate) unawaited(refresh());
+    }
+  }
+
   Future<bool> saveCamera(Camera camera) async {
-    if (saving || !_storageHealthy) return false;
+    if (saving || presetBusy || !_storageHealthy) return false;
     final updated = List<Camera>.of(cameras);
     final index = updated.indexWhere((c) => c.id == camera.id);
     if (index < 0) {
@@ -281,7 +507,7 @@ class PtzController extends ChangeNotifier {
   }
 
   Future<bool> removeCamera(Camera camera) async {
-    if (saving || !_storageHealthy) return false;
+    if (saving || presetBusy || !_storageHealthy) return false;
     return _persist(
       cameras.where((c) => c.id != camera.id).toList(),
       removed: camera,
@@ -348,6 +574,7 @@ class PtzController extends ChangeNotifier {
       _pollTimer?.cancel();
       connection = CameraConnection.paused;
       await endMotion();
+      _cancelPreset();
       _notify();
     } else if (selected != null && !switching) {
       await select(selected!);

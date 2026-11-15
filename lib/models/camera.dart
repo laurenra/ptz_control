@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'camera_preset.dart';
+
 enum ViscaTransport { raw, sony }
 
 class Camera {
@@ -10,6 +12,7 @@ class Camera {
     required this.port,
     this.transport = ViscaTransport.raw,
     this.localPort = 0,
+    this.presets = const [],
   });
 
   final String id;
@@ -18,6 +21,17 @@ class Camera {
   final int port;
   final ViscaTransport transport;
   final int localPort;
+  final List<CameraPreset> presets;
+
+  Camera withPresets(List<CameraPreset> values) => Camera(
+    id: id,
+    name: name,
+    host: host,
+    port: port,
+    transport: transport,
+    localPort: localPort,
+    presets: List.unmodifiable(values),
+  );
 
   String get endpoint => '$host:$port';
   String get protocolLabel => transport == ViscaTransport.raw
@@ -44,6 +58,7 @@ class Camera {
     'port': port,
     'transport': transport.name,
     'localPort': localPort,
+    'presets': presets.map((p) => p.toJson()).toList(),
   };
 
   factory Camera.fromJson(Map<String, dynamic> json) {
@@ -54,6 +69,11 @@ class Camera {
       port: json['port'] as int,
       transport: ViscaTransport.values.byName(json['transport'] as String),
       localPort: json['localPort'] as int? ?? 0,
+      presets: List.unmodifiable(
+        (json['presets'] as List? ?? []).map(
+          (p) => CameraPreset.fromJson(p as Map<String, dynamic>),
+        ),
+      ),
     );
     if (camera.id.isEmpty ||
         camera.name.trim().isEmpty ||
@@ -61,7 +81,10 @@ class Camera {
         camera.port < 1 ||
         camera.port > 65535 ||
         camera.localPort < 0 ||
-        camera.localPort > 65535) {
+        camera.localPort > 65535 ||
+        camera.presets.length > 9 ||
+        camera.presets.map((p) => p.slot).toSet().length !=
+            camera.presets.length) {
       throw const FormatException('Invalid saved camera');
     }
     return camera;

@@ -10,12 +10,16 @@ class HoldButton extends StatefulWidget {
     required this.onStart,
     required this.onStop,
     required this.enabled,
+    this.text,
+    this.compact = false,
   });
   final String label;
   final IconData icon;
   final bool Function() onStart;
   final VoidCallback onStop;
   final bool enabled;
+  final String? text;
+  final bool compact;
 
   @override
   State<HoldButton> createState() => _HoldButtonState();
@@ -111,7 +115,10 @@ class _HoldButtonState extends State<HoldButton> {
                 : SystemMouseCursors.basic,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 90),
-              constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
+              constraints: BoxConstraints(
+                minHeight: widget.compact ? 36 : 48,
+                minWidth: widget.compact ? 36 : 48,
+              ),
               decoration: BoxDecoration(
                 color: _held
                     ? Theme.of(context).colorScheme.primary
@@ -126,15 +133,30 @@ class _HoldButtonState extends State<HoldButton> {
                 ),
               ),
               child: Center(
-                child: Icon(
-                  widget.icon,
-                  size: 25,
-                  color: _held
-                      ? const Color(0xff083b31)
-                      : widget.enabled
-                      ? Colors.white
-                      : Colors.white24,
-                ),
+                child: widget.text != null
+                    ? Text(
+                        widget.text!,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.1,
+                          color: _held
+                              ? const Color(0xff083b31)
+                              : widget.enabled
+                              ? Colors.white
+                              : Colors.white24,
+                        ),
+                      )
+                    : Icon(
+                        widget.icon,
+                        size: 25,
+                        color: _held
+                            ? const Color(0xff083b31)
+                            : widget.enabled
+                            ? Colors.white
+                            : Colors.white24,
+                      ),
               ),
             ),
           ),

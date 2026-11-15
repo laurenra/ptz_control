@@ -8,6 +8,7 @@ import '../models/camera.dart';
 import '../services/visca_protocol.dart';
 import 'camera_editor.dart';
 import 'hold_button.dart';
+import 'preset_editor.dart';
 
 const _accent = Color(0xff62dfc4);
 const _muted = Color(0xff9aadb6);
@@ -323,7 +324,7 @@ class _ControlShellState extends State<ControlShell>
           ),
         )
         .toList(),
-    onChanged: c.switching
+    onChanged: c.switching || c.presetBusy
         ? null
         : (id) {
             if (id != null) {
@@ -375,50 +376,32 @@ class _ControlShellState extends State<ControlShell>
             ),
           ],
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
         Row(
           children: [
-            _metric('PAN', c.pan?.toString()),
-            _metric('TILT', c.tilt?.toString()),
-            _metric(
-              'ZOOM',
-              c.zoom == null
-                  ? null
-                  : '0x${c.zoom!.toRadixString(16).padLeft(4, '0').toUpperCase()}',
-            ),
+            _metric('PAN', c.pan),
+            _metric('TILT', c.tilt),
+            _metric('ZOOM', c.zoom),
           ],
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Position in camera-native units',
-          style: TextStyle(color: _muted, fontSize: 10),
         ),
       ],
     );
   }
 
-  Widget _metric(String label, String? value) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
+  Widget _metric(String label, int? value) => Expanded(
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          '$label: ${value ?? '—'}',
           style: const TextStyle(
-            fontSize: 10,
+            fontSize: 11,
             color: _muted,
-            letterSpacing: 1.1,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value ?? '—',
-          style: const TextStyle(
             fontFamily: 'monospace',
-            fontSize: 19,
-            fontWeight: FontWeight.w500,
           ),
         ),
-      ],
+      ),
     ),
   );
 
@@ -451,119 +434,272 @@ class _ControlShellState extends State<ControlShell>
   Widget _control() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      _title(
-        'Camera workspace',
-        'Take control',
-        IconButton(
-          tooltip: 'Refresh camera status',
-          onPressed: c.canControl ? () => unawaited(c.refresh()) : null,
-          icon: const Icon(Icons.refresh, size: 21),
-        ),
-      ),
       if (c.cameras.isEmpty)
         _card(_empty())
       else ...[
-        _selector(),
-        const SizedBox(height: 12),
-        _card(_status()),
-        const SizedBox(height: 18),
-        _sectionLabel('PAN & TILT', 'Hold to move'),
-        const SizedBox(height: 10),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final controls = _directionPad();
-            final speeds = _speeds();
-            if (constraints.maxWidth < 310) {
-              return Column(
-                children: [
-                  SizedBox(width: 192, child: controls),
-                  const SizedBox(height: 14),
-                  speeds,
-                ],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                SizedBox(width: 192, child: controls),
-                const SizedBox(width: 16),
-                Expanded(child: speeds),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 18),
-        _sectionLabel(
-          'LENS',
-          c.autofocus == null
-              ? 'Focus mode unknown'
-              : c.autofocus!
-              ? 'Autofocus on'
-              : 'Manual focus',
-        ),
-        const SizedBox(height: 10),
         Row(
           children: [
-            Expanded(
-              child: _lensButton('Zoom out', Icons.remove, false, false),
-            ),
-            const SizedBox(width: 8),
-            Expanded(child: _lensButton('Zoom in', Icons.add, false, true)),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _lensButton(
-                'Focus near',
-                Icons.filter_center_focus,
-                true,
-                false,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _lensButton(
-                'Focus far',
-                Icons.center_focus_strong,
-                true,
-                true,
-              ),
+            Expanded(child: _selector()),
+            const SizedBox(width: 6),
+            IconButton(
+              tooltip: 'Refresh camera status',
+              onPressed: c.canOperate ? () => unawaited(c.refresh()) : null,
+              icon: const Icon(Icons.refresh, size: 21),
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        const Row(
-          children: [
-            Expanded(
-              child: Text(
-                'ZOOM  − / +',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10, color: _muted),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                'FOCUS  NEAR / FAR',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10, color: _muted),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: c.canControl ? () => unawaited(c.stopAll()) : null,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xffffb9aa),
-              minimumSize: const Size(0, 44),
-            ),
-            icon: const Icon(Icons.stop_rounded, size: 18),
-            label: const Text('Stop all movement'),
+        const SizedBox(height: 8),
+        _card(_status()),
+        const SizedBox(height: 12),
+        _controlDeck(),
+        const SizedBox(height: 8),
+        Tooltip(
+          message: 'Store the current aperture. Recall keeps Manual exposure or uses Iris Priority so the saved aperture takes effect.',
+          child: _check(
+            'Save aperture with preset',
+            c.saveApertureWithPreset,
+            c.setSaveAperture,
+            enabled: !c.presetBusy,
           ),
         ),
+        Center(
+          child: IconButton(
+            tooltip: 'Return camera home',
+            onPressed: c.canOperate && !c.moving
+                ? () => unawaited(c.command('Return home', Visca.home))
+                : null,
+            icon: const Icon(Icons.home_outlined, size: 22, color: _accent),
+          ),
+        ),
+        _presets(),
+        const SizedBox(height: 4),
+        _check(
+          'Save preset',
+          c.savePresetMode,
+          c.setSavePresetMode,
+          enabled: !c.presetBusy,
+        ),
+        if (c.presetBusy)
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
       ],
     ],
   );
+
+  Widget _check(
+    String label,
+    bool value,
+    ValueChanged<bool> onChanged, {
+    bool enabled = true,
+    double fontSize = 12,
+  }) => InkWell(
+    onTap: enabled ? () => onChanged(!value) : null,
+    borderRadius: BorderRadius.circular(6),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 28),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 22,
+            height: 24,
+            child: Checkbox(
+              value: value,
+              onChanged: enabled ? (v) => onChanged(v!) : null,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 2,
+              style: TextStyle(fontSize: fontSize),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _controlDeck() => LayoutBuilder(
+    builder: (context, constraints) {
+      final right = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'SPEED',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+          Tooltip(
+            message:
+                'Link both speeds from 1 to 20, the shared pan/tilt range.',
+            child: _check(
+              'Sync pan/tilt',
+              c.syncPanTilt,
+              c.setSyncPanTilt,
+              enabled: !c.moving && !c.presetBusy,
+              fontSize: 10,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(width: 64, child: _speeds()),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 56,
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 40,
+                      child: _lensButton(
+                        'Zoom out',
+                        Icons.remove,
+                        false,
+                        false,
+                        'Zoom −',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: 40,
+                      child: _lensButton(
+                        'Zoom in',
+                        Icons.add,
+                        false,
+                        true,
+                        'Zoom +',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: 40,
+                      child: _lensButton(
+                        'Focus near',
+                        Icons.filter_center_focus,
+                        true,
+                        false,
+                        'Focus\nnear',
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      height: 40,
+                      child: _lensButton(
+                        'Focus far',
+                        Icons.center_focus_strong,
+                        true,
+                        true,
+                        'Focus\nfar',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+      if (constraints.maxWidth < 280) {
+        return Column(
+          children: [
+            SizedBox(width: 156, child: _directionPad()),
+            const SizedBox(height: 12),
+            SizedBox(width: 156, child: right),
+          ],
+        );
+      }
+      final padWidth = constraints.maxWidth >= 340 ? 156.0 : 132.0;
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(width: padWidth, child: _directionPad()),
+          const SizedBox(width: 12),
+          Expanded(child: right),
+        ],
+      );
+    },
+  );
+
+  Widget _presets() => Column(
+    children: List.generate(
+      3,
+      (row) => Padding(
+        padding: EdgeInsets.only(bottom: row < 2 ? 6 : 0),
+        child: Row(
+          children: List.generate(3, (col) {
+            final slot = row * 3 + col + 1;
+            final preset = c.preset(slot);
+            final label = preset?.name ?? '$slot';
+            return Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(right: col < 2 ? 6 : 0),
+                child: SizedBox(
+                  height: 48,
+                  child: Tooltip(
+                    message:
+                        '${c.savePresetMode ? 'Save' : 'Recall'} preset $slot: $label${preset?.aperture != null ? ' · includes aperture' : ''}',
+                    child: OutlinedButton(
+                      key: ValueKey('preset-$slot'),
+                      onPressed: c.canOperate && !c.moving
+                          ? () => _activatePreset(slot)
+                          : null,
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 4,
+                        ),
+                        backgroundColor: preset == null
+                            ? const Color(0xff182329)
+                            : const Color(0xff203b35),
+                        side: BorderSide(
+                          color: c.savePresetMode
+                              ? _accent
+                              : const Color(0xff35464f),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                      ),
+                      child: Text(
+                        label,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12, height: 1.2),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+      ),
+    ),
+  );
+
+  Future<void> _activatePreset(int slot) async {
+    if (!c.savePresetMode) {
+      await c.recallPreset(slot);
+      return;
+    }
+    await c.endMotion();
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => PresetEditor(controller: c, slot: slot),
+    );
+  }
 
   Widget _sectionLabel(String label, String detail) => Row(
     children: [
@@ -592,7 +728,7 @@ class _ControlShellState extends State<ControlShell>
       ('Tilt up', Icons.north, 3, 1),
       ('Pan right / tilt up', Icons.north_east, 2, 1),
       ('Pan left', Icons.west, 1, 3),
-      ('Home', Icons.home_outlined, 3, 3),
+      ('Stop all movement', Icons.stop_rounded, 3, 3),
       ('Pan right', Icons.east, 2, 3),
       ('Pan left / tilt down', Icons.south_west, 1, 2),
       ('Tilt down', Icons.south, 3, 2),
@@ -606,19 +742,17 @@ class _ControlShellState extends State<ControlShell>
           child: Row(
             children: List.generate(3, (col) {
               final d = directions[row * 3 + col];
-              final home = row == 1 && col == 1;
+              final stop = row == 1 && col == 1;
               return Expanded(
                 child: Padding(
                   padding: EdgeInsets.only(right: col < 2 ? 6 : 0),
                   child: SizedBox(
-                    height: 60,
-                    child: home
+                    height: 48,
+                    child: stop
                         ? IconButton.filledTonal(
-                            tooltip: 'Return camera home',
-                            onPressed: c.canControl && !c.moving
-                                ? () => unawaited(
-                                    c.command('Return home', Visca.home),
-                                  )
+                            tooltip: 'Stop all movement',
+                            onPressed: c.canControl
+                                ? () => unawaited(c.stopAll())
                                 : null,
                             style: IconButton.styleFrom(
                               shape: RoundedRectangleBorder(
@@ -626,14 +760,15 @@ class _ControlShellState extends State<ControlShell>
                               ),
                             ),
                             icon: const Icon(
-                              Icons.home_outlined,
-                              color: _accent,
+                              Icons.stop_rounded,
+                              color: Color(0xffffb9aa),
                             ),
                           )
                         : HoldButton(
                             label: d.$1,
                             icon: d.$2,
-                            enabled: c.canControl,
+                            enabled: c.canOperate,
+                            compact: true,
                             onStart: () => c.startMotion(
                               d.$1,
                               Visca.drive(c.panSpeed, c.tiltSpeed, d.$3, d.$4),
@@ -654,7 +789,7 @@ class _ControlShellState extends State<ControlShell>
 
   Widget _speeds() => Column(
     children: [
-      _speed('Pan', c.panSpeed, 1, 24),
+      _speed('Pan', c.panSpeed, 1, c.syncPanTilt ? 20 : 24),
       const SizedBox(height: 6),
       _speed('Tilt', c.tiltSpeed, 1, 20),
       const SizedBox(height: 6),
@@ -665,15 +800,16 @@ class _ControlShellState extends State<ControlShell>
   );
 
   Widget _speed(String label, int value, int min, int max) => SizedBox(
-    height: 44,
+    height: 40,
     child: DropdownButtonFormField<int>(
       key: ValueKey('$label-$value'),
       initialValue: value,
       isExpanded: true,
+      iconSize: 16,
       decoration: InputDecoration(
-        labelText: '$label speed',
+        labelText: label,
         labelStyle: const TextStyle(fontSize: 11),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7),
       ),
       style: const TextStyle(
         fontSize: 13,
@@ -684,7 +820,7 @@ class _ControlShellState extends State<ControlShell>
         max - min + 1,
         (i) => DropdownMenuItem(value: min + i, child: Text('${min + i}')),
       ),
-      onChanged: c.moving
+      onChanged: c.moving || c.presetBusy
           ? null
           : (v) {
               if (v != null) c.setSpeed(label, v);
@@ -692,23 +828,30 @@ class _ControlShellState extends State<ControlShell>
     ),
   );
 
-  Widget _lensButton(String label, IconData icon, bool focus, bool positive) =>
-      HoldButton(
-        label: label,
-        icon: icon,
-        enabled: c.canControl && (!focus || c.autofocus == false),
-        onStart: () => c.startMotion(
-          label,
-          Visca.lens(
-            focus: focus,
-            positive: positive,
-            speed: focus ? c.focusSpeed : c.zoomSpeed,
-          ),
-          Visca.camera(focus ? 8 : 7, [0]),
-          owner: label,
-        ),
-        onStop: () => unawaited(c.endMotion(owner: label)),
-      );
+  Widget _lensButton(
+    String label,
+    IconData icon,
+    bool focus,
+    bool positive,
+    String text,
+  ) => HoldButton(
+    label: label,
+    icon: icon,
+    text: text,
+    compact: true,
+    enabled: c.canOperate && (!focus || c.autofocus == false),
+    onStart: () => c.startMotion(
+      label,
+      Visca.lens(
+        focus: focus,
+        positive: positive,
+        speed: focus ? c.focusSpeed : c.zoomSpeed,
+      ),
+      Visca.camera(focus ? 8 : 7, [0]),
+      owner: label,
+    ),
+    onStop: () => unawaited(c.endMotion(owner: label)),
+  );
 
   Widget _settings() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,

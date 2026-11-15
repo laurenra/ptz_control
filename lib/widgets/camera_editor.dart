@@ -48,6 +48,7 @@ class _CameraEditorState extends State<CameraEditor> {
       port: int.parse(_port.text),
       localPort: int.parse(_local.text),
       transport: _transport,
+      presets: widget.camera?.presets ?? const [],
     );
     final saved = await widget.onSave(camera);
     if (!mounted) return;
