@@ -52,6 +52,43 @@ The current build is ad hoc signed and is not notarized. If macOS blocks an app 
 
 Camera configurations and preset display names are stored separately on each Mac; copying the app does not transfer them. Presets stored in the camera remain in the camera.
 
+### Android
+
+Build with Flutter and the Android SDK installed. Check the Android toolchain with `flutter doctor -v` and resolve any reported issues before building. See [Flutter’s Android setup instructions](https://docs.flutter.dev/platform-integration/android/setup).
+
+To compile, install, and launch the app on an Android device:
+
+1. On the phone, enable **Developer options → USB debugging**.
+2. Connect the phone by USB and accept the debugging authorization prompt.
+3. Run these commands from the project folder:
+
+   ```sh
+   flutter pub get
+   flutter devices
+   flutter run --release -d <device-id>
+   ```
+
+   Replace `<device-id>` with the Android device ID listed by `flutter devices`.
+
+To create an APK you can copy to another device:
+
+```sh
+flutter pub get
+flutter build apk --release
+```
+
+The APK is created at:
+
+```text
+build/app/outputs/flutter-apk/app-release.apk
+```
+
+Transfer the APK to the phone, open it, and allow installation from that source if prompted. See [Flutter’s Android build and release guidance](https://docs.flutter.dev/deployment/android).
+
+The current Flutter configuration requires **Android 7.0 or newer**. Release builds currently use the debug signing key, which supports local installation; Play Store distribution requires release signing to be configured in `android/app/build.gradle.kts`.
+
+For camera control, connect the phone to Wi-Fi that can reach the camera’s network. The Android Internet permission is already included.
+
 ## Connect a camera
 
 1. Open **Cameras** → **Add camera**.
