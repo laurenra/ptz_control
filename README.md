@@ -52,6 +52,43 @@ The current build is ad hoc signed and is not notarized. If macOS blocks an app 
 
 Camera configurations and preset display names are stored separately on each Mac; copying the app does not transfer them. Presets stored in the camera remain in the camera.
 
+### iOS
+
+Build on a Mac with Flutter, Xcode, and CocoaPods installed. The iOS project is already included and targets **iOS 15 or later**. Check the iOS toolchain and open the Xcode workspace:
+
+```sh
+flutter doctor -v
+flutter pub get
+open ios/Runner.xcworkspace
+```
+
+Resolve any iOS toolchain issues reported by `flutter doctor` before building. See [Flutter’s iOS setup instructions](https://docs.flutter.dev/platform-integration/ios/setup).
+
+To compile, install, and launch the app on an iPhone or iPad:
+
+1. In Xcode, select the **Runner** project, then the **Runner** target → **Signing & Capabilities**.
+2. Enable **Automatically manage signing** and select your **Team**. Add your Apple account if needed. A free Apple account works for testing on your own device.
+3. The bundle identifier is currently `com.ptz.ptzControl`. Change it to a unique identifier if Xcode reports that it is unavailable.
+4. Connect the device by USB, unlock it, and accept the **Trust This Computer** prompt. Enable **Settings → Privacy & Security → Developer Mode** on the device and restart it if prompted.
+5. Run these commands from the project folder:
+
+   ```sh
+   flutter devices
+   flutter run --release -d <device-id>
+   ```
+
+   Replace `<device-id>` with the iPhone or iPad device ID listed by `flutter devices`. This compiles, signs, installs, and launches the app. If prompted on the device, trust the developer certificate under **Settings → General → VPN & Device Management**.
+
+For **TestFlight or App Store distribution**, enroll in the Apple Developer Program, register the app in App Store Connect, and configure distribution signing. Then build the release package:
+
+```sh
+flutter build ipa --release
+```
+
+The Xcode archive is created in `build/ios/archive/`, and the exported `.ipa` is created in `build/ios/ipa/`. See [Flutter’s iOS build and release guidance](https://docs.flutter.dev/deployment/ios) for uploading and distributing the build.
+
+For camera control, connect the device to Wi-Fi that can reach the camera’s network and allow **Local Network** access when prompted. The local-network permission description is already included.
+
 ### Android
 
 Build with Flutter and the Android SDK installed. Check the Android toolchain with `flutter doctor -v` and resolve any reported issues before building. See [Flutter’s Android setup instructions](https://docs.flutter.dev/platform-integration/android/setup).
