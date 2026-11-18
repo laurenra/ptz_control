@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ptz_control/models/camera.dart';
+import 'package:ptz_control/models/camera_limits.dart';
 import 'package:ptz_control/models/camera_preset.dart';
 import 'package:ptz_control/services/camera_store.dart';
 
@@ -17,6 +18,14 @@ void main() {
         port: 52381,
         localPort: i == 0 ? 52381 : 0,
         transport: ViscaTransport.sony,
+        limits: const CameraLimits(
+          panMin: -30,
+          panMax: 40,
+          tiltMin: -20,
+          tiltMax: 50,
+          zoomMin: 10,
+          zoomMax: 80,
+        ),
         presets: const [
           CameraPreset(
             slot: 1,

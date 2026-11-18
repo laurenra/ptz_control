@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../models/camera.dart';
+import '../models/camera_limits.dart';
 import 'connection_status.dart';
 
 class CameraEditor extends StatefulWidget {
@@ -12,10 +13,14 @@ class CameraEditor extends StatefulWidget {
     this.camera,
     required this.onSave,
     required this.onTest,
+    required this.onTestLimits,
+    required this.onStopLimits,
   });
   final Camera? camera;
   final Future<bool> Function(Camera) onSave;
   final Future<bool> Function(Camera) onTest;
+  final Future<CameraLimits> Function(Camera) onTestLimits;
+  final Future<void> Function() onStopLimits;
 
   @override
   State<CameraEditor> createState() => _CameraEditorState();
@@ -23,6 +28,9 @@ class CameraEditor extends StatefulWidget {
 
 class _CameraEditorState extends State<CameraEditor> {
   final _form = GlobalKey<FormState>();
+  late final _cameraId =
+      widget.camera?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
+  late CameraLimits? _limits = widget.camera?.limits;
   final _hostKey = GlobalKey<FormFieldState<String>>();
   final _portKey = GlobalKey<FormFieldState<String>>();
   final _localKey = GlobalKey<FormFieldState<String>>();
@@ -36,15 +44,18 @@ class _CameraEditorState extends State<CameraEditor> {
   );
   late ViscaTransport _transport =
       widget.camera?.transport ?? ViscaTransport.sony;
+  late (String, String, String, ViscaTransport) _lastConnectionSettings;
   bool _saving = false;
   bool _testing = false;
   bool _connected = false;
-  bool get _busy => _saving || _testing;
+  bool _testingLimits = false;
+  bool get _busy => _saving || _testing || _testingLimits;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    _lastConnectionSettings = (_host.text, _port.text, _local.text, _transport);
     for (final field in [_host, _port, _local]) {
       field.addListener(_connectionChanged);
     }
@@ -56,11 +67,20 @@ class _CameraEditorState extends State<CameraEditor> {
   }
 
   void _connectionChanged() {
-    if (_connected) setState(() => _connected = false);
+    final settings = (_host.text, _port.text, _local.text, _transport);
+    if (settings == _lastConnectionSettings) return;
+    _lastConnectionSettings = settings;
+    if (_connected || _limits != null) {
+      setState(() {
+        _connected = false;
+        _limits = null;
+      });
+    }
   }
 
   @override
   void dispose() {
+    if (_testingLimits) unawaited(widget.onStopLimits());
     for (final field in [_name, _host, _port, _local]) {
       field.dispose();
     }
@@ -86,14 +106,35 @@ class _CameraEditorState extends State<CameraEditor> {
   }
 
   Camera _enteredCamera() => Camera(
-    id: widget.camera?.id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+    id: _cameraId,
     name: _name.text.trim(),
     host: _host.text.trim(),
     port: int.parse(_port.text),
     localPort: int.parse(_local.text),
     transport: _transport,
     presets: widget.camera?.presets ?? const [],
+    limits: _limits,
   );
+
+  Future<void> _testLimits() async {
+    if (_busy || !_form.currentState!.validate()) return;
+    setState(() {
+      _testingLimits = true;
+      _error = null;
+    });
+    try {
+      final limits = await widget.onTestLimits(_enteredCamera());
+      if (!mounted) return;
+      setState(() {
+        _limits = limits;
+        _connected = true;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Limits were not saved: $error');
+    } finally {
+      if (mounted) setState(() => _testingLimits = false);
+    }
+  }
 
   Future<void> _testConnection() async {
     if (_busy) return;
@@ -179,6 +220,7 @@ class _CameraEditorState extends State<CameraEditor> {
                       : (value) => setState(() {
                           _transport = value!;
                           _connected = false;
+                          _limits = null;
                           if (_port.text == '1259' || _port.text == '52381') {
                             _port.text = value == ViscaTransport.sony
                                 ? '52381'
@@ -222,6 +264,58 @@ class _CameraEditorState extends State<CameraEditor> {
                             : 'Not connected',
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    OutlinedButton(
+                      onPressed: _busy ? null : _testLimits,
+                      child: const Text('Test & save limits'),
+                    ),
+                    if (_testingLimits) ...[
+                      TextButton(
+                        onPressed: () => unawaited(widget.onStopLimits()),
+                        child: const Text('Stop test'),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _testingLimits ? 'Please wait. Testing limits...' : 'Moves the camera through its full range and saves this camera’s settings.',
+                  style: const TextStyle(fontSize: 12, color: Colors.white60),
+                ),
+                const SizedBox(height: 8),
+                Table(
+                  defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                  children: [
+                    const TableRow(
+                      children: [Text(''), Text('Min'), Text('Max')],
+                    ),
+                    for (final row in [
+                      ('Pan', _limits?.panMin, _limits?.panMax),
+                      ('Tilt', _limits?.tiltMin, _limits?.tiltMax),
+                      ('Zoom', _limits?.zoomMin, _limits?.zoomMax),
+                    ])
+                      TableRow(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Text(row.$1),
+                          ),
+                          Text(
+                            '${row.$2 ?? '—'}',
+                            key: ValueKey('limit-${row.$1.toLowerCase()}-min'),
+                          ),
+                          Text(
+                            '${row.$3 ?? '—'}',
+                            key: ValueKey('limit-${row.$1.toLowerCase()}-max'),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
                 if (_error != null)

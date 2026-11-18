@@ -73,6 +73,8 @@ class _ControlShellState extends State<ControlShell>
         camera: camera,
         onSave: c.saveCamera,
         onTest: c.testCameraConnection,
+        onTestLimits: c.testAndSaveCameraLimits,
+        onStopLimits: c.cancelLimitTest,
       ),
     );
   }
@@ -1234,14 +1236,32 @@ class _ControlShellState extends State<ControlShell>
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  camera.endpoint,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '${camera.protocolLabel} · local ${camera.localPort == 0 ? 'auto' : camera.localPort}',
-                  style: const TextStyle(color: _muted, fontSize: 11),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          camera.endpoint,
+                          style: const TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 7,
+                      child: Text(
+                        '${camera.protocolLabel} · local ${camera.localPort == 0 ? 'auto' : camera.localPort}',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(color: _muted, fontSize: 11),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

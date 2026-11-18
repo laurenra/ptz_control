@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 
 import 'models/camera.dart';
 import 'models/camera_preset.dart';
+import 'models/camera_limits.dart';
+import 'services/camera_limit_tester.dart';
 import 'services/camera_store.dart';
 import 'services/visca_client.dart';
 import 'services/visca_protocol.dart';
@@ -11,9 +13,16 @@ import 'services/visca_protocol.dart';
 enum CameraConnection { none, connecting, connected, offline, paused }
 
 class PtzController extends ChangeNotifier {
-  PtzController({CameraStore? store})
-    : _store = store ?? PreferencesCameraStore();
+  PtzController({
+    CameraStore? store,
+    CameraLimitTester Function(ViscaClient)? limitTesterFactory,
+  }) : _store = store ?? PreferencesCameraStore(),
+       _limitTesterFactory = limitTesterFactory ?? CameraLimitTester.new;
   final CameraStore _store;
+  final CameraLimitTester Function(ViscaClient) _limitTesterFactory;
+  CameraLimitTester? _limitTester;
+  bool _testingLimits = false;
+  bool _limitCancelled = false;
   List<Camera> cameras = [];
   final List<CommandLog> logs = [];
   Camera? selected;
@@ -271,6 +280,89 @@ class PtzController extends ChangeNotifier {
     }
   }
 
+  Future<void> cancelLimitTest() async {
+    if (_testingLimits) _limitCancelled = true;
+    await _limitTester?.cancel();
+  }
+
+  /// Sweep the entered camera and persist all six bounds only after success.
+  Future<CameraLimits> testAndSaveCameraLimits(Camera camera) async {
+    if (_disposed ||
+        _paused ||
+        switching ||
+        presetBusy ||
+        saving ||
+        _testingConnection) {
+      throw StateError('Camera is busy');
+    }
+    if (!_storageHealthy ||
+        (cameras.length >= 8 && !cameras.any((c) => c.id == camera.id))) {
+      throw StateError('Camera configuration cannot be saved');
+    }
+    // Validate before moving or changing the stored camera configuration.
+    Camera.fromJson(camera.toJson());
+    _testingConnection = true;
+    _testingLimits = true;
+    _limitCancelled = false;
+    switching = true;
+    _pollTimer?.cancel();
+    _notify();
+    ViscaClient? client;
+    try {
+      await endMotion();
+      _client?.close();
+      _client = null;
+      await _queryFuture;
+      if (_disposed || _paused || _limitCancelled) {
+        throw StateError('Limit test stopped');
+      }
+      client = ViscaClient(
+        camera,
+        onLog: (log) {
+          if (_disposed) return;
+          logs.insert(0, log);
+          if (logs.length > 200) logs.removeLast();
+          _notify();
+        },
+        onReply: () {},
+        onError: (_) {},
+      );
+      _limitTester = _limitTesterFactory(client);
+      await client.open();
+      if (_disposed || _paused || _limitCancelled) {
+        throw StateError('Limit test stopped');
+      }
+      final limits = await _limitTester!.run();
+      if (_disposed || _paused || _limitCancelled) {
+        throw StateError('Limit test stopped');
+      }
+      final updatedCamera = camera.withLimits(limits);
+      final updated = List<Camera>.of(cameras);
+      final index = updated.indexWhere((c) => c.id == camera.id);
+      if (index < 0) {
+        updated.add(updatedCamera);
+      } else {
+        updated[index] = updatedCamera;
+      }
+      await _store.save(updated);
+      cameras = updated;
+      if (selected == null || selected?.id == camera.id) {
+        selected = updatedCamera;
+      }
+      return limits;
+    } finally {
+      // Keep the socket alive until the final stop requests have finished.
+      await _limitTester?.cancel();
+      _limitTester = null;
+      client?.close();
+      switching = false;
+      _testingConnection = false;
+      _testingLimits = false;
+      if (!_disposed && selected != null) await select(selected!);
+      _notify();
+    }
+  }
+
   Future<void> _query(Iterable<int> registers, {bool scheduled = false}) {
     if (!canOperate || moving || _client == null || _disposed) {
       return Future.value();
@@ -421,6 +513,10 @@ class PtzController extends ChangeNotifier {
   }
 
   Future<void> stopAll() async {
+    if (_testingLimits) {
+      await cancelLimitTest();
+      return;
+    }
     if (_client == null) return;
     _cancelPreset();
     _motionClient = null;
@@ -754,6 +850,7 @@ class PtzController extends ChangeNotifier {
     if (_paused == paused) return;
     _paused = paused;
     if (paused) {
+      await cancelLimitTest();
       _pollTimer?.cancel();
       connection = CameraConnection.paused;
       await endMotion();
@@ -767,6 +864,7 @@ class PtzController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(cancelLimitTest());
     _testClient?.close();
     _pollTimer?.cancel();
     _watchdog?.cancel();
