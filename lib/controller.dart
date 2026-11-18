@@ -51,6 +51,8 @@ class PtzController extends ChangeNotifier {
       Visca.modeLabel(whiteBalanceMode, Visca.whiteBalanceModes);
   DateTime? lastReply;
   ViscaClient? _client;
+  ViscaClient? _testClient;
+  bool _testingConnection = false;
   ViscaClient? _motionClient;
   List<int>? _motionStop;
   Object? _motionOwner;
@@ -185,6 +187,89 @@ class PtzController extends ChangeNotifier {
 
   /// The preset dialog shows freshly queried exposure mode and iris values.
   Future<void> refreshPresetSettings() => _query([0x39, 0x4b]);
+
+  /// Check unsaved network settings with a read-only pan/tilt inquiry.
+  Future<bool> testCameraConnection(Camera camera) async {
+    if (_disposed ||
+        _paused ||
+        switching ||
+        presetBusy ||
+        saving ||
+        _testingConnection) {
+      return false;
+    }
+    _testingConnection = true;
+    var suspended = false;
+    ViscaClient? temporary;
+    try {
+      await endMotion();
+      final active = _client;
+      final current = active?.camera;
+      final sameEndpoint =
+          current?.host == camera.host && current?.port == camera.port;
+      final reuse =
+          active != null &&
+          sameEndpoint &&
+          current!.transport == camera.transport &&
+          current.localPort == camera.localPort;
+      late final ViscaClient client;
+      if (reuse) {
+        client = active;
+      } else {
+        // Free an occupied fixed source port, and avoid resetting Sony's
+        // sequence while another client is still using that camera endpoint.
+        if (active != null &&
+            ((camera.localPort != 0 &&
+                    camera.localPort == current!.localPort) ||
+                (sameEndpoint &&
+                    (camera.transport == ViscaTransport.sony ||
+                        current!.transport == ViscaTransport.sony)))) {
+          suspended = true;
+          switching = true;
+          _pollTimer?.cancel();
+          _client = null;
+          active.close();
+          _notify();
+          await _queryFuture;
+        }
+        if (_disposed || _paused) return false;
+        client = ViscaClient(
+          camera,
+          onLog: (log) {
+            if (_disposed) return;
+            logs.insert(0, log);
+            if (logs.length > 200) logs.removeLast();
+            _notify();
+          },
+          onReply: () {},
+          onError: (_) {},
+        );
+        temporary = _testClient = client;
+        await client.open();
+      }
+      if (_disposed || _paused) return false;
+      final reply = await client.send(
+        'Test camera connection',
+        Visca.panTiltInquiry,
+      );
+      if (_disposed || _paused || reply == null || reply.length != 11) {
+        return false;
+      }
+      Visca.nibbles(reply.sublist(2, 6), signed: true);
+      Visca.nibbles(reply.sublist(6, 10), signed: true);
+      return true;
+    } catch (_) {
+      return false;
+    } finally {
+      temporary?.close();
+      _testClient = null;
+      if (suspended && !_disposed) {
+        switching = false;
+        if (selected != null) await select(selected!);
+      }
+      _testingConnection = false;
+    }
+  }
 
   Future<void> _query(Iterable<int> registers, {bool scheduled = false}) {
     if (!canOperate || moving || _client == null || _disposed) {
@@ -682,6 +767,7 @@ class PtzController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _testClient?.close();
     _pollTimer?.cancel();
     _watchdog?.cancel();
     final client = _client;

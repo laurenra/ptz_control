@@ -8,6 +8,7 @@ import '../models/camera.dart';
 import '../services/debug_log_export.dart';
 import '../services/visca_protocol.dart';
 import 'camera_editor.dart';
+import 'connection_status.dart';
 import 'hold_button.dart';
 import 'preset_editor.dart';
 
@@ -68,7 +69,11 @@ class _ControlShellState extends State<ControlShell>
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => CameraEditor(camera: camera, onSave: c.saveCamera),
+      builder: (_) => CameraEditor(
+        camera: camera,
+        onSave: c.saveCamera,
+        onTest: c.testCameraConnection,
+      ),
     );
   }
 
@@ -342,8 +347,6 @@ class _ControlShellState extends State<ControlShell>
   );
 
   Widget _status() {
-    final online = c.connection == CameraConnection.connected;
-    final color = online ? _accent : const Color(0xffe5ba78);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -352,25 +355,9 @@ class _ControlShellState extends State<ControlShell>
           runSpacing: 6,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Flexible(
-                  child: Text(
-                    c.statusLabel,
-                    style: TextStyle(color: color, fontSize: 12),
-                  ),
-                ),
-              ],
+            ConnectionStatus(
+              connected: c.connection == CameraConnection.connected,
+              label: c.statusLabel,
             ),
             Text(
               c.selected?.endpoint ?? '—',
@@ -842,7 +829,8 @@ class _ControlShellState extends State<ControlShell>
                     child: HoldButton(
                       label: d.$1,
                       icon: d.$2,
-                      iconColor: stop ? const Color(0xffffb9aa) : null,
+                      // iconColor: stop ? const Color(0xffffb9aa) : null,
+                      iconColor: stop ? const Color(0xfff55656) : null,
                       tooltip: stop ? d.$1 : null,
                       enabled: stop ? c.canControl : c.canOperate,
                       compact: true,
