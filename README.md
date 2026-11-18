@@ -50,7 +50,10 @@ Copy **build/ptz_control-macos.zip** to the other Mac, unzip it, drag **ptz_cont
 
 The current build is ad hoc signed and is not notarized. If macOS blocks an app you built or trust, try opening it once, then go to **System Settings → Privacy & Security → Open Anyway**. See [Apple’s instructions for opening an unnotarized app](https://support.apple.com/en-us/102445).
 
-Camera configurations and preset display names are stored separately on each Mac; copying the app does not transfer them. Presets stored in the camera remain in the camera.
+Camera configurations, preset display names, and preset snapshots are stored separately on each Mac; copying the app does not transfer them. Presets stored in the camera remain in the camera.
+
+Note: Xcode 27 no longer requires macOS binaries to support the x86_64 architecture. To build ARM-only macOS apps now, run: `flutter config --enable-macos-arm64-only`. This will become the default behavior
+in a future Flutter release.
 
 ### iOS
 
@@ -150,14 +153,14 @@ The computer or phone must be able to reach the camera's network. Enable VISCA U
 
 ## Presets
 
-Each camera has nine preset buttons, initially numbered 1–9. They use the camera’s built-in VISCA preset memory. Button 1 maps to VISCA memory address 0, through button 9 at address 8. Only the display names are stored locally with the camera’s configuration.
+Each camera has nine preset buttons, initially numbered 1–9. They use the camera’s built-in VISCA preset memory. Button 1 maps to VISCA memory address 0, through button 9 at address 8. Display names and queried pan, tilt, zoom, and focus snapshots are stored locally with the camera’s configuration, along with iris when exposure saving is enabled in Manual mode.
 
-- Move the camera to the desired shot. Enable **Save preset**, then press a preset button. Enter a name of up to **40 characters on two lines**, for example `2 Podium` / `Extra Wide`. **Save** sends VISCA Memory Set and waits for camera completion before storing the local name. Saving replaces that preset in the camera. **Cancel** or **Escape** closes the dialog without sending a save command.
-- When the queried exposure mode is **Manual**, the dialog shows **“Manual exposure mode enabled. Exposure and image settings are also saved.”** above the name entry. The camera saves and restores the settings supported by its preset memory, including manual exposure and image settings; the app does not store or reapply individual values. The exact settings included depend on the camera model and its preset configuration.
+- Move the camera to the desired shot. Enable **Save preset**, then press a preset button. Enter a name of up to **40 characters on two lines**, for example `2 Podium` / `Extra Wide`. **Save** queries the current pan, tilt, zoom, focus, and exposure mode, persists the local snapshot, then sends VISCA Memory Set and waits for camera completion. Saving replaces that preset in the camera. **Cancel** or **Escape** closes the dialog without sending a save command.
+- The save dialog queries and displays **Exposure mode:** and **Aperture:** side by side above the name entry. In **Manual** mode it shows **“Exposure setting will be saved.”**; other modes show **“Exposure setting can only be saved for manual exposure.”** When **Save exposure with preset** is checked, the app also queries and saves iris in Manual mode. Other exposure and image settings remain subject to the camera’s own preset behavior.
 - Uncheck **Save preset** to recall shots. Every preset button sends VISCA Memory Recall, even without a locally saved name, so presets configured outside this app can be recalled. The camera reports any unsupported or empty slots.
-- **Save aperture with preset** is disabled and unchecked for now. It does not add commands or change the camera’s native preset behavior.
+- The exposure checkbox reads **Save exposure with preset** while **Save preset** is checked and **Use exposure from preset** otherwise. It starts unchecked and retains its state when switching between save and recall. When checked during recall, the app waits for VISCA Memory Recall to complete, then sets iris to the locally saved value, if available.
 - Recall waits up to 30 seconds for camera completion. Other camera controls are disabled during the operation; the center **Stop** remains available. Stop, changing tabs/cameras, or backgrounding the app interrupts a pending recall wait and sends movement stops. Position telemetry updates on the next five-second poll; recall does not trigger a full settings query.
-- Existing local preset names are retained, but old app-managed PTZ/aperture snapshots are no longer used or automatically uploaded. Save the desired shots to camera memory before relying on those names. If local name storage fails after the camera has saved a preset, a message explains that the camera save succeeded and the name is available only for the current session.
+- Existing name-only presets remain usable via camera memory; saved snapshots also survive configuration reloads. A failed inquiry or local storage write prevents the camera save. If the camera rejects the save, the app restores the previous local snapshot and reports the failure.
 
 The memory commands and zero-based numbering follow the [Sony VISCA command list](https://pro.sony/support/res/manuals/5053/f48354480e724f0aef3d45d2e1eeab63/50531551M.pdf), preset commands on page 18.
 
@@ -177,7 +180,7 @@ References: [Sony VISCA command list and IP protocol](https://pro.sony/support/r
 
 ## Code and checks
 
-- `lib/models/camera.dart` and `camera_preset.dart`: validated camera configuration, transport choice, and local names for camera memory presets.
+- `lib/models/camera.dart` and `camera_preset.dart`: validated camera configuration, transport choice, and local names and position/iris snapshots for camera memory presets.
 - `lib/services/camera_store.dart`: local configuration persistence.
 - `lib/services/visca_protocol.dart`: packet encoding, framing, and position decoding.
 - `lib/services/visca_client.dart`: UDP lifecycle, request serialization, response validation, logging, completion handling, and stop priority.
@@ -190,4 +193,4 @@ flutter test
 flutter build macos --debug
 ```
 
-Tests cover packet encoding/ranges, signed telemetry, configuration persistence and validation, raw/Sony local UDP peers, source filtering, stop priority, held-button cancellation, speed synchronization, two-line preset names and cancellation, camera-memory preset save/recall, manual-exposure messaging, legacy name migration, camera-save failures, local name-storage failures, interrupted recalls, five-second PTZ-only polling, scoped setting refreshes, and compact layouts with both navigation placements. The macOS debug app has been built and launched locally; other OS builds and physical-camera checks remain to be performed on their target hardware.
+Tests cover packet encoding/ranges, signed telemetry, configuration persistence and validation, raw/Sony local UDP peers, source filtering, stop priority, held-button cancellation, speed synchronization, two-line preset names and cancellation, camera-memory preset save/recall, manual-exposure messaging, legacy preset compatibility, position/iris snapshot persistence, conditional iris restoration, camera-save failures, local storage failures, interrupted recalls, five-second PTZ-only polling, scoped setting refreshes, and compact layouts with both navigation placements. The macOS debug app has been built and launched locally; other OS builds and physical-camera checks remain to be performed on their target hardware.

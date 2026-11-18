@@ -24,6 +24,7 @@ class PtzController extends ChangeNotifier {
   bool debug = false;
   bool syncPanTilt = false;
   bool savePresetMode = false;
+  bool saveExposureWithPreset = false;
   bool presetBusy = false;
   bool _recalling = false;
   int _presetGeneration = 0;
@@ -181,6 +182,9 @@ class PtzController extends ChangeNotifier {
 
   /// The Control page displays exposure and white balance mode status.
   Future<void> refreshControlStatus() => _query([0x39, 0x35]);
+
+  /// The preset dialog shows freshly queried exposure mode and iris values.
+  Future<void> refreshPresetSettings() => _query([0x39, 0x4b]);
 
   Future<void> _query(Iterable<int> registers, {bool scheduled = false}) {
     if (!canOperate || moving || _client == null || _disposed) {
@@ -378,6 +382,11 @@ class PtzController extends ChangeNotifier {
     _notify();
   }
 
+  void setSaveExposureWithPreset(bool value) {
+    saveExposureWithPreset = value;
+    _notify();
+  }
+
   CameraPreset? preset(int slot) {
     for (final p in selected?.presets ?? <CameraPreset>[]) {
       if (p.slot == slot) return p;
@@ -433,18 +442,67 @@ class PtzController extends ChangeNotifier {
     final camera = selected!;
     final client = _client!;
     final generation = ++_presetGeneration;
+    final includeExposure = saveExposureWithPreset;
+    var snapshotStored = false;
     presetBusy = true;
     message = null;
     _notify();
     try {
-      await _presetRequest(
+      // Finish an in-flight refresh before collecting a consistent snapshot.
+      await _queryFuture;
+      final position = await _presetRequest(
         client,
         generation,
-        'Save camera preset $slot',
-        Visca.storePreset(slot),
-        completion: true,
+        'Read preset pan / tilt',
+        Visca.panTiltInquiry,
       );
-      final saved = CameraPreset(slot: slot, name: name.trim());
+      final zoomReply = await _presetRequest(
+        client,
+        generation,
+        'Read preset zoom',
+        Visca.zoomInquiry,
+      );
+      final focusReply = await _presetRequest(
+        client,
+        generation,
+        'Read preset focus',
+        Visca.focusInquiry,
+      );
+      final modeReply = await _presetRequest(
+        client,
+        generation,
+        'Read preset exposure mode',
+        Visca.exposureModeInquiry,
+      );
+      if (position.length != 11 ||
+          zoomReply.length != 7 ||
+          focusReply.length != 7 ||
+          modeReply.length != 4) {
+        throw const FormatException('Invalid preset snapshot data');
+      }
+      int? savedAperture;
+      if (includeExposure && modeReply[2] == 3) {
+        final iris = await _presetRequest(
+          client,
+          generation,
+          'Read preset aperture',
+          Visca.apertureInquiry,
+        );
+        if (iris.length != 7) {
+          throw const FormatException('Invalid aperture data');
+        }
+        savedAperture = Visca.nibbles(iris.sublist(2, 6));
+        RangeError.checkValueInInterval(savedAperture, 0, 255, 'aperture');
+      }
+      final saved = CameraPreset(
+        slot: slot,
+        name: name.trim(),
+        pan: Visca.nibbles(position.sublist(2, 6), signed: true),
+        tilt: Visca.nibbles(position.sublist(6, 10), signed: true),
+        zoom: Visca.nibbles(zoomReply.sublist(2, 6)),
+        focus: Visca.nibbles(focusReply.sublist(2, 6)),
+        aperture: savedAperture,
+      );
       final updatedCamera = camera.withPresets(
         [...camera.presets.where((p) => p.slot != slot), saved]
           ..sort((a, b) => a.slot.compareTo(b.slot)),
@@ -452,25 +510,32 @@ class PtzController extends ChangeNotifier {
       final updated = cameras
           .map((c) => c.id == camera.id ? updatedCamera : c)
           .toList();
-      // The camera has already stored the preset. A local name-storage failure
-      // must not report that the camera save failed or invite an accidental retry.
-      String? nameWarning;
-      try {
-        if (!_storageHealthy) throw StateError('Setup storage is unavailable');
-        await _store.save(updated);
-      } catch (_) {
-        nameWarning =
-            'Preset $slot was saved in the camera, but its name could '
-            'not be saved locally. The name will be kept for this session.';
-      }
-      if (_disposed) return true;
+      // Persist the snapshot before asking the camera to overwrite its memory.
+      if (!_storageHealthy) throw StateError('Setup storage is unavailable');
+      await _store.save(updated);
+      snapshotStored = true;
+      await _presetRequest(
+        client,
+        generation,
+        'Save camera preset $slot',
+        Visca.storePreset(slot),
+        completion: true,
+      );
       cameras = updated;
       if (selected?.id == camera.id) selected = updatedCamera;
-      if (_presetActive(generation, client)) message = nameWarning;
       return true;
     } catch (error) {
+      String rollbackWarning = '';
+      if (snapshotStored) {
+        try {
+          await _store.save(cameras);
+        } catch (_) {
+          rollbackWarning =
+              ' The previous local snapshot could not be restored.';
+        }
+      }
       if (_presetActive(generation, client)) {
-        message = 'Preset was not saved: $error';
+        message = 'Preset was not saved: $error$rollbackWarning';
       }
       return false;
     } finally {
@@ -482,6 +547,9 @@ class PtzController extends ChangeNotifier {
   Future<bool> recallPreset(int slot) async {
     if (!canOperate || moving || slot < 1 || slot > 9) return false;
     final client = _client!;
+    final savedAperture = saveExposureWithPreset
+        ? preset(slot)?.aperture
+        : null;
     final generation = ++_presetGeneration;
     presetBusy = true;
     _recalling = true;
@@ -496,6 +564,16 @@ class PtzController extends ChangeNotifier {
         completion: true,
         motion: true,
       );
+      if (savedAperture != null) {
+        await _presetRequest(
+          client,
+          generation,
+          'Restore preset aperture',
+          Visca.absoluteAperture(savedAperture),
+          completion: true,
+        );
+        imageValues[0x4b] = savedAperture;
+      }
       return true;
     } catch (error) {
       if (_presetActive(generation, client)) {

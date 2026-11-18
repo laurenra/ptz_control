@@ -38,6 +38,7 @@ class Visca {
 
   static const panTiltInquiry = [0x81, 9, 6, 0x12, 0xff];
   static const zoomInquiry = [0x81, 9, 4, 0x47, 0xff];
+  static const focusInquiry = [0x81, 9, 4, 0x48, 0xff];
   static const focusModeInquiry = [0x81, 9, 4, 0x38, 0xff];
 
   static const apertureInquiry = [0x81, 9, 4, 0x4b, 0xff];

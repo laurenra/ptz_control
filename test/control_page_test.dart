@@ -13,6 +13,7 @@ class _UiController extends PtzController {
   int imageRefreshes = 0;
   int controlRefreshes = 0;
   int fullRefreshes = 0;
+  int presetRefreshes = 0;
   @override
   bool get canControl => true;
   @override
@@ -61,6 +62,12 @@ class _UiController extends PtzController {
   @override
   Future<void> refresh() async {
     fullRefreshes++;
+  }
+
+  @override
+  Future<void> refreshPresetSettings() async {
+    presetRefreshes++;
+    notifyListeners();
   }
 
   @override
@@ -245,7 +252,7 @@ void main() {
       expect(tester.getTopLeft(syncCheckbox).dx, closeTo(lens.left, .1));
       final saveOption = tester.getRect(find.text('Save preset'));
       final apertureOption = tester.getRect(
-        find.text('Save aperture with preset'),
+        find.text('Use exposure from preset'),
       );
       final presetEdge = tester.getRect(find.byKey(const ValueKey('preset-9')));
       expect(saveOption.top, greaterThanOrEqualTo(presetEdge.bottom));
@@ -255,19 +262,19 @@ void main() {
       final apertureCheckbox = find.descendant(
         of: find
             .ancestor(
-              of: find.text('Save aperture with preset'),
+              of: find.text('Use exposure from preset'),
               matching: find.byType(InkWell),
             )
             .first,
         matching: find.byType(Checkbox),
       );
       expect(tester.getTopLeft(apertureCheckbox).dx, closeTo(200, .1));
-      expect(tester.widget<Checkbox>(apertureCheckbox).onChanged, isNull);
-      await tester.tap(find.text('Save aperture with preset'));
+      expect(tester.widget<Checkbox>(apertureCheckbox).onChanged, isNotNull);
+      await tester.tap(find.text('Use exposure from preset'));
       await tester.pump();
-      expect(tester.widget<Checkbox>(apertureCheckbox).value, false);
+      expect(tester.widget<Checkbox>(apertureCheckbox).value, true);
       expect(
-        tester.widget<Text>(find.text('Save aperture with preset')).textAlign,
+        tester.widget<Text>(find.text('Use exposure from preset')).textAlign,
         TextAlign.start,
       );
       final navTop = tester.getTopLeft(find.byType(NavigationBar)).dy;
@@ -307,15 +314,38 @@ void main() {
       expect([c.panSpeed, c.tiltSpeed], [17, 17]);
       await tester.tap(find.text('Save preset'));
       await tester.pumpAndSettle();
+      expect(find.text('Save exposure with preset'), findsOneWidget);
+      expect(find.text('Use exposure from preset'), findsNothing);
+      expect(c.saveExposureWithPreset, true);
+      await tester.tap(find.text('Save exposure with preset'));
+      await tester.pump();
+      expect(c.saveExposureWithPreset, false);
       await tester.tap(find.byKey(const ValueKey('preset-2')));
       await tester.pumpAndSettle();
       expect(find.text('Save preset 2'), findsOneWidget);
-      const manualMessage =
-          'Manual exposure mode enabled. Exposure and image settings are also saved.';
+      expect(c.presetRefreshes, 1);
+      expect(find.text('Exposure mode: Shutter priority'), findsOneWidget);
+      expect(find.text('Aperture: 17'), findsOneWidget);
+      expect(
+        find.text('Exposure setting can only be saved for manual exposure.'),
+        findsOneWidget,
+      );
+      final mode = tester.getRect(find.text('Exposure mode: Shutter priority'));
+      final iris = tester.getRect(find.text('Aperture: 17'));
+      expect(iris.left, greaterThan(mode.right));
+      expect(iris.top, closeTo(mode.top, .1));
+      const manualMessage = 'Exposure setting will be saved.';
       expect(find.text(manualMessage), findsNothing);
       c.exposureMode = 3;
+      c.imageValues[0x4b] = 9;
       c.notifyListeners();
       await tester.pumpAndSettle();
+      expect(find.text('Exposure mode: Manual'), findsOneWidget);
+      expect(find.text('Aperture: 9'), findsOneWidget);
+      expect(
+        find.text('Exposure setting can only be saved for manual exposure.'),
+        findsNothing,
+      );
       expect(find.text(manualMessage), findsOneWidget);
       expect(
         tester.getRect(find.text(manualMessage)).bottom,

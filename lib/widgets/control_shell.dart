@@ -510,16 +510,15 @@ class _ControlShellState extends State<ControlShell>
         enabled: !c.presetBusy,
         fontSize: 11,
       );
-      final aperture = Tooltip(
-        message: 'Unavailable for now. Camera presets manage their own image settings.',
-        child: _check(
-          'Save aperture with preset',
-          false,
-          null,
-          enabled: false,
-          fontSize: 11,
-          textAlign: TextAlign.start,
-        ),
+      final aperture = _check(
+        c.savePresetMode
+            ? 'Save exposure with preset'
+            : 'Use exposure from preset',
+        c.saveExposureWithPreset,
+        c.setSaveExposureWithPreset,
+        enabled: !c.presetBusy,
+        fontSize: 11,
+        textAlign: TextAlign.start,
       );
       // Account for the left rail so the aperture option starts at the
       // window midpoint with either navigation placement.

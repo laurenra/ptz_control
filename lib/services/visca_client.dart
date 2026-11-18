@@ -260,6 +260,7 @@ class ViscaClient {
       final expectedLength = active.payload[3] == 0x12
           ? 11
           : (active.payload[3] == 0x47 ||
+                active.payload[3] == 0x48 ||
                 Visca.imageValueInquiries.containsKey(active.payload[3]))
           ? 7
           : 4;

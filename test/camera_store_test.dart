@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ptz_control/models/camera.dart';
+import 'package:ptz_control/models/camera_preset.dart';
 import 'package:ptz_control/services/camera_store.dart';
 
 void main() {
@@ -16,6 +17,17 @@ void main() {
         port: 52381,
         localPort: i == 0 ? 52381 : 0,
         transport: ViscaTransport.sony,
+        presets: const [
+          CameraPreset(
+            slot: 1,
+            name: 'Wide',
+            pan: -2,
+            tilt: 16,
+            zoom: 0x1234,
+            focus: 0x2345,
+            aperture: 9,
+          ),
+        ],
       ),
     );
     await PreferencesCameraStore().save(cameras);

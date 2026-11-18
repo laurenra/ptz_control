@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
@@ -21,6 +23,16 @@ class _PresetEditorState extends State<PresetEditor> {
   late final _cameraId = widget.controller.selected?.id;
   bool _saving = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.controller.selected?.id == _cameraId) {
+        unawaited(widget.controller.refreshPresetSettings());
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -71,18 +83,49 @@ class _PresetEditorState extends State<PresetEditor> {
               children: [
                 ListenableBuilder(
                   listenable: widget.controller,
-                  builder: (context, _) => widget.controller.exposureMode == 3
-                      ? const Padding(
-                          padding: EdgeInsets.only(bottom: 12),
-                          child: Text(
-                            'Manual exposure mode enabled. Exposure and image settings are also saved.',
-                            style: TextStyle(
+                  builder: (context, _) {
+                    final c = widget.controller;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Exposure mode: ${c.exposureModeLabel}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                'Aperture: ${c.aperture ?? '—'}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            c.exposureMode == 3
+                                ? 'Exposure setting will be saved.'
+                                : 'Exposure setting can only be saved for manual exposure.',
+                            style: const TextStyle(
                               fontSize: 12,
                               color: Colors.white70,
                             ),
                           ),
-                        )
-                      : const SizedBox.shrink(),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 TextFormField(
                   key: const Key('preset-name'),
