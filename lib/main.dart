@@ -9,6 +9,7 @@ void main() {
 }
 
 const accent = Color(0xff62dfc4);
+// const accent = Color(0xfff5a000);
 const panel = Color(0xff182329);
 const muted = Color(0xff9aadb6);
 
@@ -26,7 +27,9 @@ class MyApp extends StatelessWidget {
       scaffoldBackgroundColor: const Color(0xff10191e),
       colorScheme: const ColorScheme.dark(
         primary: accent,
-        onPrimary: Color(0xff083b31),
+        // onPrimary: Color(0xffadadad),
+        // onPrimary: Color(0xff083b31),
+        onPrimary: Color(0xff293a43),
         secondary: accent,
         surface: panel,
         onSurface: Color(0xffe5edef),
@@ -49,6 +52,7 @@ class MyApp extends StatelessWidget {
       navigationBarTheme: const NavigationBarThemeData(
         backgroundColor: Color(0xff121d23),
         indicatorColor: Color(0xff25483f),
+        // indicatorColor: Color(0xff2a3a42),
         height: 68,
       ),
       dividerTheme: const DividerThemeData(color: Color(0xff2a3a42)),

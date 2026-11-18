@@ -10,6 +10,8 @@ class HoldButton extends StatefulWidget {
     required this.onStart,
     required this.onStop,
     required this.enabled,
+    this.iconColor,
+    this.tooltip,
     this.text,
     this.compact = false,
   });
@@ -18,6 +20,8 @@ class HoldButton extends StatefulWidget {
   final bool Function() onStart;
   final VoidCallback onStop;
   final bool enabled;
+  final Color? iconColor;
+  final String? tooltip;
   final String? text;
   final bool compact;
 
@@ -60,7 +64,7 @@ class _HoldButtonState extends State<HoldButton> {
 
   @override
   Widget build(BuildContext context) => Tooltip(
-    message: '${widget.label} · hold to move',
+    message: widget.tooltip ?? '${widget.label} · hold to move',
     child: Semantics(
       button: true,
       enabled: widget.enabled,
@@ -154,7 +158,7 @@ class _HoldButtonState extends State<HoldButton> {
                         color: _held
                             ? const Color(0xff083b31)
                             : widget.enabled
-                            ? Colors.white
+                            ? widget.iconColor ?? Colors.white
                             : Colors.white24,
                       ),
               ),

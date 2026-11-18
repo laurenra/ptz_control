@@ -840,35 +840,29 @@ class _ControlShellState extends State<ControlShell>
                   padding: EdgeInsets.only(right: col < 2 ? 6 : 0),
                   child: SizedBox(
                     height: (194 - 12) / 3,
-                    child: stop
-                        ? IconButton.filledTonal(
-                            tooltip: 'Stop all movement',
-                            onPressed: c.canControl
-                                ? () => unawaited(c.stopAll())
-                                : null,
-                            style: IconButton.styleFrom(
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                            ),
-                            icon: const Icon(
-                              Icons.stop_rounded,
-                              color: Color(0xffffb9aa),
-                            ),
-                          )
-                        : HoldButton(
-                            label: d.$1,
-                            icon: d.$2,
-                            enabled: c.canOperate,
-                            compact: true,
-                            onStart: () => c.startMotion(
-                              d.$1,
-                              Visca.drive(c.panSpeed, c.tiltSpeed, d.$3, d.$4),
-                              Visca.drive(c.panSpeed, c.tiltSpeed, 3, 3),
-                              owner: d.$1,
-                            ),
-                            onStop: () => unawaited(c.endMotion(owner: d.$1)),
-                          ),
+                    child: HoldButton(
+                      label: d.$1,
+                      icon: d.$2,
+                      iconColor: stop ? const Color(0xffffb9aa) : null,
+                      tooltip: stop ? d.$1 : null,
+                      enabled: stop ? c.canControl : c.canOperate,
+                      compact: true,
+                      onStart: () {
+                        if (stop) {
+                          unawaited(c.stopAll());
+                          return true;
+                        }
+                        return c.startMotion(
+                          d.$1,
+                          Visca.drive(c.panSpeed, c.tiltSpeed, d.$3, d.$4),
+                          Visca.drive(c.panSpeed, c.tiltSpeed, 3, 3),
+                          owner: d.$1,
+                        );
+                      },
+                      onStop: () {
+                        if (!stop) unawaited(c.endMotion(owner: d.$1));
+                      },
+                    ),
                   ),
                 ),
               );
