@@ -572,6 +572,13 @@ class _ControlShellState extends State<ControlShell>
       final wide = constraints.maxWidth >= 348;
       final padWidth = wide ? 168.0 : 120.0;
       final movementGap = wide ? 24.0 : 12.0;
+      final movementMode = _check(
+        'Move until stopped',
+        c.moveUntilStopped,
+        c.setMoveUntilStopped,
+        enabled: c.canControl && !c.presetBusy,
+        fontSize: 10,
+      );
       const header = Text(
         'SPEED',
         style: TextStyle(
@@ -690,6 +697,8 @@ class _ControlShellState extends State<ControlShell>
       if (constraints.maxWidth < 288) {
         return Column(
           children: [
+            SizedBox(width: 168, child: movementMode),
+            const SizedBox(height: 6),
             SizedBox(
               key: const Key('movement-grid'),
               width: 168,
@@ -707,7 +716,8 @@ class _ControlShellState extends State<ControlShell>
         children: [
           Row(
             children: [
-              SizedBox(width: padWidth + movementGap),
+              SizedBox(width: padWidth, child: movementMode),
+              SizedBox(width: movementGap),
               Expanded(child: header),
             ],
           ),
@@ -854,20 +864,21 @@ class _ControlShellState extends State<ControlShell>
                       icon: d.$2,
                       // iconColor: stop ? const Color(0xffffb9aa) : null,
                       iconColor: stop ? const Color(0xfff55656) : null,
-                      tooltip: stop ? d.$1 : null,
+                      tooltip: stop
+                          ? d.$1
+                          : c.moveUntilStopped
+                          ? '${d.$1} · move until stopped'
+                          : null,
                       enabled: stop ? c.canControl : c.canOperate,
                       compact: true,
+                      stopOnRelease: stop || !c.moveUntilStopped,
+                      active: !stop && c.motionOwnedBy(d.$1),
                       onStart: () {
                         if (stop) {
                           unawaited(c.stopAll());
                           return true;
                         }
-                        return c.startMotion(
-                          d.$1,
-                          Visca.drive(c.panSpeed, c.tiltSpeed, d.$3, d.$4),
-                          Visca.drive(c.panSpeed, c.tiltSpeed, 3, 3),
-                          owner: d.$1,
-                        );
+                        return c.startPanTilt(d.$1, d.$3, d.$4, owner: d.$1);
                       },
                       onStop: () {
                         if (!stop) unawaited(c.endMotion(owner: d.$1));

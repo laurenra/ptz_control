@@ -81,4 +81,58 @@ void main() {
     expect(starts, 2);
     expect(stops, 1);
   });
+  testWidgets(
+    'latched input ignores release but stops on focus loss and pointer cancellation',
+    (tester) async {
+      var starts = 0;
+      var stops = 0;
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return Center(
+                  child: SizedBox(
+                    width: 60,
+                    height: 60,
+                    child: HoldButton(
+                      label: 'Latched move',
+                      icon: Icons.east,
+                      enabled: true,
+                      stopOnRelease: false,
+                      active: starts > stops,
+                      onStart: () {
+                        update(() => starts++);
+                        return true;
+                      },
+                      onStop: () {
+                        update(() => stops++);
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      final target = find.byType(HoldButton);
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      expect(starts, 1);
+      expect(stops, 0);
+      tester.binding.focusManager.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      expect(stops, 1);
+      final cancelled = await tester.startGesture(tester.getCenter(target));
+      await tester.pump();
+      await cancelled.cancel();
+      await tester.pumpAndSettle();
+      expect(starts, 2);
+      expect(stops, 2);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
 }

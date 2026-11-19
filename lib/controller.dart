@@ -12,6 +12,27 @@ import 'services/visca_protocol.dart';
 
 enum CameraConnection { none, connecting, connected, offline, paused }
 
+class _PanTiltMotion {
+  _PanTiltMotion(
+    this.client,
+    this.description,
+    this.panSpeed,
+    this.tiltSpeed,
+    this.horizontal,
+    this.vertical,
+    this.limits,
+  );
+
+  final ViscaClient client;
+  final String description;
+  final int panSpeed, tiltSpeed;
+  final CameraLimits? limits;
+  int horizontal, vertical;
+  int? lastPan, lastTilt;
+  int stillPan = 0, stillTilt = 0;
+  final elapsed = Stopwatch();
+}
+
 class PtzController extends ChangeNotifier {
   PtzController({
     CameraStore? store,
@@ -32,6 +53,7 @@ class PtzController extends ChangeNotifier {
   bool switching = false;
   bool debug = false;
   bool syncPanTilt = false;
+  bool moveUntilStopped = false;
   bool savePresetMode = false;
   bool saveExposureWithPreset = false;
   bool presetBusy = false;
@@ -65,12 +87,14 @@ class PtzController extends ChangeNotifier {
   ViscaClient? _motionClient;
   List<int>? _motionStop;
   Object? _motionOwner;
+  _PanTiltMotion? _panTiltMotion;
   Timer? _pollTimer;
   Timer? _watchdog;
 
   bool get canControl => _client != null && !switching && !_paused;
   bool get canOperate => canControl && !presetBusy;
   bool get moving => _motionClient != null;
+  bool motionOwnedBy(Object owner) => moving && _motionOwner == owner;
   String get statusLabel => switch (connection) {
     CameraConnection.none => 'No camera selected',
     CameraConnection.connecting => 'Waiting for camera',
@@ -495,6 +519,182 @@ class PtzController extends ChangeNotifier {
     return true;
   }
 
+  void setMoveUntilStopped(bool value) {
+    if (moveUntilStopped == value) return;
+    moveUntilStopped = value;
+    unawaited(endMotion());
+    _notify();
+  }
+
+  /// Start a direction-pad move, monitoring limits in both input modes.
+  bool startPanTilt(
+    String description,
+    int horizontal,
+    int vertical, {
+    Object? owner,
+  }) {
+    if (_disposed || !canOperate || _client == null) return false;
+    Visca.drive(panSpeed, tiltSpeed, horizontal, vertical);
+    final motionOwner = owner ?? description;
+    final previous = _panTiltMotion;
+    if (moving &&
+        (!moveUntilStopped ||
+            previous == null ||
+            _motionOwner == motionOwner)) {
+      return false;
+    }
+    final motion = _PanTiltMotion(
+      _client!,
+      description,
+      panSpeed,
+      tiltSpeed,
+      horizontal,
+      vertical,
+      selected?.limits,
+    );
+    _motionClient = motion.client;
+    _motionStop = Visca.drive(panSpeed, tiltSpeed, 3, 3);
+    _motionOwner = motionOwner;
+    _panTiltMotion = motion;
+    message = null;
+    _notify();
+    unawaited(_runPanTilt(motion, replacing: previous != null));
+    return true;
+  }
+
+  bool _panTiltActive(_PanTiltMotion motion) =>
+      _panTiltMotion == motion &&
+      _motionClient == motion.client &&
+      _client == motion.client &&
+      !_disposed &&
+      !_paused &&
+      !switching;
+
+  Future<({int pan, int tilt})?> _motionPosition(_PanTiltMotion motion) async {
+    if (!_panTiltActive(motion)) return null;
+    final reply = await motion.client.send(
+      'Read moving pan / tilt',
+      Visca.panTiltInquiry,
+    );
+    if (!_panTiltActive(motion)) return null;
+    if (reply == null || reply.length != 11) {
+      throw StateError('Could not read pan / tilt position');
+    }
+    final position = (
+      pan: Visca.nibbles(reply.sublist(2, 6), signed: true),
+      tilt: Visca.nibbles(reply.sublist(6, 10), signed: true),
+    );
+    pan = position.pan;
+    tilt = position.tilt;
+    _notify();
+    return position;
+  }
+
+  void _applyMovementLimits(
+    _PanTiltMotion motion,
+    int pan,
+    int tilt, {
+    bool monitorStall = false,
+  }) {
+    if (monitorStall) {
+      motion.stillPan = pan == motion.lastPan ? motion.stillPan + 1 : 0;
+      motion.stillTilt = tilt == motion.lastTilt ? motion.stillTilt + 1 : 0;
+    }
+    motion.lastPan = pan;
+    motion.lastTilt = tilt;
+    final limits = motion.limits;
+    if (limits != null) {
+      if (motion.horizontal == 1 && pan <= limits.panMin ||
+          motion.horizontal == 2 && pan >= limits.panMax) {
+        motion.horizontal = 3;
+      }
+      if (motion.vertical == 1 && tilt >= limits.tiltMax ||
+          motion.vertical == 2 && tilt <= limits.tiltMin) {
+        motion.vertical = 3;
+      }
+    }
+    // Also detect the camera's own end stops when no saved bounds exist.
+    if (monitorStall && motion.elapsed.elapsed >= const Duration(seconds: 2)) {
+      if (motion.stillPan >= 6) motion.horizontal = 3;
+      if (motion.stillTilt >= 6) motion.vertical = 3;
+    }
+  }
+
+  Future<bool> _sendPanTilt(_PanTiltMotion motion) async {
+    if (!_panTiltActive(motion)) return false;
+    final reply = await motion.client.send(
+      motion.description,
+      Visca.drive(
+        motion.panSpeed,
+        motion.tiltSpeed,
+        motion.horizontal,
+        motion.vertical,
+      ),
+      motion: true,
+    );
+    if (!_panTiltActive(motion)) return false;
+    if (reply == null) {
+      throw StateError('Camera did not acknowledge pan / tilt movement');
+    }
+    return true;
+  }
+
+  Future<void> _runPanTilt(
+    _PanTiltMotion motion, {
+    required bool replacing,
+  }) async {
+    try {
+      if (replacing) {
+        await motion.client.send(
+          'Stop previous direction',
+          Visca.drive(motion.panSpeed, motion.tiltSpeed, 3, 3),
+          priority: true,
+        );
+      }
+      await _queryFuture;
+      if (!_panTiltActive(motion)) return;
+      final initial = await _motionPosition(motion);
+      if (initial == null || !_panTiltActive(motion)) return;
+      _applyMovementLimits(motion, initial.pan, initial.tilt);
+      if (motion.horizontal == 3 && motion.vertical == 3) {
+        await endMotion();
+        return;
+      }
+      if (!await _sendPanTilt(motion)) return;
+      motion.elapsed.start();
+      while (_panTiltActive(motion)) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        if (!_panTiltActive(motion)) return;
+        final position = await _motionPosition(motion);
+        if (position == null || !_panTiltActive(motion)) return;
+        final previousHorizontal = motion.horizontal;
+        final previousVertical = motion.vertical;
+        _applyMovementLimits(
+          motion,
+          position.pan,
+          position.tilt,
+          monitorStall: true,
+        );
+        if (motion.horizontal == 3 && motion.vertical == 3) {
+          await endMotion();
+          return;
+        }
+        if ((motion.horizontal != previousHorizontal ||
+                motion.vertical != previousVertical) &&
+            !await _sendPanTilt(motion)) {
+          return;
+        }
+      }
+    } catch (error) {
+      if (!_panTiltActive(motion)) return;
+      await endMotion();
+      if (!_disposed && _client == motion.client && !moving) {
+        message = 'Movement stopped: $error';
+        _notify();
+      }
+    }
+  }
+
   Future<void> endMotion({Object? owner}) async {
     if (owner != null && owner != _motionOwner) return;
     if (owner == null && _recalling) {
@@ -503,6 +703,7 @@ class PtzController extends ChangeNotifier {
     }
     final client = _motionClient;
     final stop = _motionStop;
+    _panTiltMotion = null;
     _motionClient = null;
     _motionStop = null;
     _motionOwner = null;
@@ -519,6 +720,7 @@ class PtzController extends ChangeNotifier {
     }
     if (_client == null) return;
     _cancelPreset();
+    _panTiltMotion = null;
     _motionClient = null;
     _motionStop = null;
     _motionOwner = null;

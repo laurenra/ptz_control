@@ -81,7 +81,98 @@ class _UiController extends PtzController {
   }
 }
 
+class _MovementUiController extends _UiController {
+  Object? _owner;
+  int movementStops = 0;
+  final directions = <(int, int)>[];
+
+  @override
+  bool get moving => _owner != null;
+  @override
+  bool motionOwnedBy(Object owner) => _owner == owner;
+  @override
+  bool startPanTilt(
+    String description,
+    int horizontal,
+    int vertical, {
+    Object? owner,
+  }) {
+    if (moving && !moveUntilStopped) return false;
+    _owner = owner ?? description;
+    directions.add((horizontal, vertical));
+    notifyListeners();
+    return true;
+  }
+
+  @override
+  Future<void> endMotion({Object? owner}) async {
+    if (_owner == null || owner != null && owner != _owner) return;
+    _owner = null;
+    movementStops++;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> stopAll() async {
+    stopCount++;
+    await endMotion();
+  }
+}
+
 void main() {
+  testWidgets(
+    'Move until stopped latches directions until the center stop or mode change',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final c = _MovementUiController();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MyApp(controller: c));
+      await tester.pumpAndSettle();
+      final option = find.text('Move until stopped');
+      expect(
+        tester.getRect(option).bottom,
+        lessThan(tester.getRect(find.byKey(const Key('movement-grid'))).top),
+      );
+      expect(c.moveUntilStopped, false);
+      final held = await tester.startGesture(
+        tester.getCenter(find.byTooltip('Pan right · hold to move')),
+      );
+      await tester.pump();
+      expect(c.moving, true);
+      await held.up();
+      await tester.pumpAndSettle();
+      expect(c.moving, false);
+      expect(c.movementStops, 1);
+      await tester.tap(option);
+      await tester.pumpAndSettle();
+      expect(c.moveUntilStopped, true);
+      await tester.tap(find.byTooltip('Pan right · move until stopped'));
+      await tester.pumpAndSettle();
+      expect(c.moving, true);
+      expect(c.movementStops, 1);
+      await tester.tap(find.byTooltip('Stop all movement'));
+      await tester.pumpAndSettle();
+      expect(c.moving, false);
+      expect(c.stopCount, 1);
+      expect(c.movementStops, 2);
+      await tester.tap(find.byTooltip('Pan right · move until stopped'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Pan left · move until stopped'));
+      await tester.pumpAndSettle();
+      expect(c.directions.last, (1, 3));
+      expect(c.moving, true);
+      await tester.tap(option);
+      await tester.pumpAndSettle();
+      expect(c.moveUntilStopped, false);
+      expect(c.moving, false);
+      expect(find.byTooltip('Pan left · hold to move'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets('Image shows raw values and one-push requires confirmation', (
     tester,
   ) async {

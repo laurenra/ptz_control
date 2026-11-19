@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
-/// Stops on release, drag away, pointer cancellation, focus loss, or removal.
+/// Supports held and latched movement; cancellation always stops the motion.
 class HoldButton extends StatefulWidget {
   const HoldButton({
     super.key,
@@ -16,6 +16,8 @@ class HoldButton extends StatefulWidget {
     this.tooltip,
     this.text,
     this.compact = false,
+    this.stopOnRelease = true,
+    this.active = false,
   });
   final String label;
   final IconData icon;
@@ -28,6 +30,8 @@ class HoldButton extends StatefulWidget {
   final String? tooltip;
   final String? text;
   final bool compact;
+  final bool stopOnRelease;
+  final bool active;
 
   @override
   State<HoldButton> createState() => _HoldButtonState();
@@ -43,25 +47,25 @@ class _HoldButtonState extends State<HoldButton> {
     if (widget.onStart()) setState(() => _held = true);
   }
 
-  void _stop() {
+  void _stop({bool force = false}) {
     _pointer = null;
-    if (!_held) return;
+    if (!_held && !(force && widget.active)) return;
     setState(() {
       _held = false;
       _pointer = null;
     });
-    widget.onStop();
+    if (widget.stopOnRelease || force) widget.onStop();
   }
 
   @override
   void didUpdateWidget(HoldButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!widget.enabled && _held) _stop();
+    if (!widget.enabled && (_held || oldWidget.active)) _stop(force: true);
   }
 
   @override
   void dispose() {
-    if (_held) widget.onStop();
+    if (_held || widget.active) widget.onStop();
     _focus.dispose();
     super.dispose();
   }
@@ -83,7 +87,7 @@ class _HoldButtonState extends State<HoldButton> {
       child: Focus(
         focusNode: _focus,
         onFocusChange: (focused) {
-          if (!focused) _stop();
+          if (!focused) _stop(force: true);
         },
         onKeyEvent: (_, event) {
           if (event.logicalKey != LogicalKeyboardKey.space &&
@@ -108,14 +112,14 @@ class _HoldButtonState extends State<HoldButton> {
             final size = context.size;
             if (size != null &&
                 !(Offset.zero & size).contains(event.localPosition)) {
-              _stop();
+              _stop(force: true);
             }
           },
           onPointerUp: (event) {
             if (_pointer == event.pointer) _stop();
           },
           onPointerCancel: (event) {
-            if (_pointer == event.pointer) _stop();
+            if (_pointer == event.pointer) _stop(force: true);
           },
           child: MouseRegion(
             cursor: widget.enabled
@@ -128,7 +132,7 @@ class _HoldButtonState extends State<HoldButton> {
                 minWidth: widget.compact ? 36 : 48,
               ),
               decoration: BoxDecoration(
-                color: _held
+                color: _held || widget.active
                     ? Theme.of(context).colorScheme.primary
                     : widget.enabled
                     ? const Color(0xff273941)
@@ -149,7 +153,7 @@ class _HoldButtonState extends State<HoldButton> {
                         style: TextStyle(
                           fontSize: 11,
                           height: 1.1,
-                          color: _held
+                          color: _held || widget.active
                               ? const Color(0xff083b31)
                               : widget.enabled
                               ? Colors.white
@@ -159,7 +163,7 @@ class _HoldButtonState extends State<HoldButton> {
                     : IconTheme(
                         data: IconThemeData(
                           size: widget.iconSize,
-                          color: _held
+                          color: _held || widget.active
                               ? const Color(0xff083b31)
                               : widget.enabled
                               ? widget.iconColor ?? Colors.white
