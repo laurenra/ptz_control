@@ -207,16 +207,17 @@ class PtzController extends ChangeNotifier {
     await refresh();
   }
 
+  /// Read focus mode first so manual controls reflect the selected camera promptly.
   /// A camera selection or explicit refresh reads every displayed setting.
   Future<void> refresh() =>
-      _query([0x12, 0x47, 0x38, 0x39, 0x35, ...Visca.imageValueInquiries.keys]);
+      _query([0x38, 0x12, 0x47, 0x39, 0x35, ...Visca.imageValueInquiries.keys]);
 
   /// Read only the settings displayed on the Image page, once on entry.
   Future<void> refreshImageSettings() =>
       _query([0x38, 0x39, 0x35, ...Visca.imageValueInquiries.keys]);
 
-  /// The Control page displays exposure and white balance mode status.
-  Future<void> refreshControlStatus() => _query([0x39, 0x35]);
+  /// The Control page displays focus, exposure, and white balance modes.
+  Future<void> refreshControlStatus() => _query([0x38, 0x39, 0x35]);
 
   /// The preset dialog shows freshly queried exposure mode and iris values.
   Future<void> refreshPresetSettings() => _query([0x39, 0x4b]);

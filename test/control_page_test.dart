@@ -43,6 +43,10 @@ class _UiController extends PtzController {
   @override
   Future<void> command(String description, List<int> bytes) async {
     commands.add(List.of(bytes));
+    if (bytes.length == 6 && bytes[3] == 0x38) {
+      autofocus = bytes[4] == 2;
+      notifyListeners();
+    }
   }
 
   @override
@@ -120,6 +124,66 @@ class _MovementUiController extends _UiController {
 }
 
 void main() {
+  testWidgets('Autofocus switches mode and disables manual focus controls', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = _UiController();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(MyApp(controller: c));
+    await tester.pumpAndSettle();
+
+    final option = find.text('Autofocus');
+    final focusSpeed = find.byWidgetPredicate(
+      (widget) =>
+          widget is DropdownButtonFormField<int> &&
+          widget.decoration.labelText == 'Focus',
+    );
+    final focusButtons = find.byWidgetPredicate(
+      (widget) => widget is HoldButton && widget.label.startsWith('Focus'),
+    );
+    void expectManualControls(bool enabled) {
+      expect(
+        tester.widget<DropdownButtonFormField<int>>(focusSpeed).onChanged,
+        enabled ? isNotNull : isNull,
+      );
+      expect(
+        tester
+            .widgetList<HoldButton>(focusButtons)
+            .every((button) => button.enabled == enabled),
+        true,
+      );
+    }
+
+    expect(
+      tester.getRect(option).bottom,
+      lessThanOrEqualTo(tester.getRect(focusSpeed).top),
+    );
+    // A missing focus-mode reply must not enable manual focus.
+    expectManualControls(false);
+    c.autofocus = false;
+    c.notifyListeners();
+    await tester.pumpAndSettle();
+    expectManualControls(true);
+
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    expect(c.autofocus, true);
+    expect(c.commands.last, [0x81, 1, 4, 0x38, 2, 0xff]);
+    expectManualControls(false);
+
+    await tester.tap(option);
+    await tester.pumpAndSettle();
+    expect(c.autofocus, false);
+    expect(c.commands.last, [0x81, 1, 4, 0x38, 3, 0xff]);
+    expectManualControls(true);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'Move until stopped latches directions until the center stop or mode change',
     (tester) async {

@@ -14,11 +14,13 @@ void main() {
   late PtzController c;
   late Camera camera;
   late List<List<int>> received;
+  int focusMode = 2;
   Completer<Datagram>? holdExposure;
   Completer<Datagram>? holdCommand;
   void Function(int)? onInquiry;
 
   setUp(() async {
+    focusMode = 2;
     holdExposure = null;
     holdCommand = null;
     onInquiry = null;
@@ -39,7 +41,7 @@ void main() {
           final response = switch (data[3]) {
             0x12 => [0x90, 0x50, 0, 0, 0, 1, 0, 0, 0, 2, 255],
             0x47 => [0x90, 0x50, 0, 0, 0, 3, 255],
-            0x38 => [0x90, 0x50, 2, 255],
+            0x38 => [0x90, 0x50, focusMode, 255],
             0x39 => [0x90, 0x50, 3, 255],
             0x35 => [0x90, 0x50, 5, 255],
             _ => [0x90, 0x50, 0, 0, 0, 9, 255],
@@ -74,7 +76,49 @@ void main() {
   List<int> inquiries() =>
       received.where((p) => p[1] == 9).map((p) => p[3]).toList();
   const imageRegisters = [0x38, 0x39, 0x35, 0x4b, 0x4a, 0x4c, 0x43, 0x44];
-  const allRegisters = [0x12, 0x47, ...imageRegisters];
+  const allRegisters = [
+    0x38,
+    0x12,
+    0x47,
+    0x39,
+    0x35,
+    0x4b,
+    0x4a,
+    0x4c,
+    0x43,
+    0x44,
+  ];
+
+  test(
+    'switching cameras reads fresh focus mode before other settings',
+    () async {
+      expect(c.autofocus, true);
+      final modesBeforeReply = <bool?>[];
+      onInquiry = (register) {
+        if (register == 0x38) modesBeforeReply.add(c.autofocus);
+      };
+      final manualCamera = Camera(
+        id: 'b',
+        name: 'Manual camera',
+        host: camera.host,
+        port: camera.port,
+      );
+      received.clear();
+      focusMode = 3;
+      await c.select(manualCamera);
+      expect(inquiries().first, 0x38);
+      expect(inquiries().where((register) => register == 0x38), hasLength(1));
+      expect(c.autofocus, false);
+
+      received.clear();
+      focusMode = 2;
+      await c.select(camera);
+      expect(inquiries().first, 0x38);
+      expect(inquiries().where((register) => register == 0x38), hasLength(1));
+      expect(c.autofocus, true);
+      expect(modesBeforeReply, [null, null]);
+    },
+  );
 
   test('selection and Refresh read everything, page entry reads displayed settings only', () async {
     expect(inquiries(), allRegisters);
@@ -83,7 +127,7 @@ void main() {
     expect(inquiries(), imageRegisters);
     received.clear();
     await c.refreshControlStatus();
-    expect(inquiries(), [0x39, 0x35]);
+    expect(inquiries(), [0x38, 0x39, 0x35]);
     received.clear();
     await c.refresh();
     expect(inquiries(), allRegisters);
@@ -157,7 +201,7 @@ void main() {
       final changed = c.command('Increase gain', Visca.camera(0x0c, [2]));
       server.send([0x90, 0x50, 3, 255], packet.address, packet.port);
       await Future.wait([status, changed]);
-      expect(inquiries(), [0x39, 0x35, 0x4c]);
+      expect(inquiries(), [0x38, 0x39, 0x35, 0x4c]);
       expect(c.gain, 9);
     },
   );

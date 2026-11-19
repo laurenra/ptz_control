@@ -685,9 +685,24 @@ class _ControlShellState extends State<ControlShell>
                   height: 44,
                   child: lensRow('Zoom', c.zoomSpeed, false),
                 ),
-                SizedBox(
-                  height: 44,
-                  child: lensRow('Focus', c.focusSpeed, true),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Transform.translate(
+                      offset: const Offset(0, -6),
+                      child: _check(
+                        'Autofocus',
+                        c.autofocus ?? false,
+                        (value) => unawaited(_focusMode(value)),
+                        enabled: c.canOperate && !c.moving,
+                        fontSize: 11,
+                      ),
+                    ),
+                    SizedBox(
+                      height: 44,
+                      child: lensRow('Focus', c.focusSpeed, true),
+                    ),
+                  ],
                 ),
               ],
             );
@@ -916,7 +931,8 @@ class _ControlShellState extends State<ControlShell>
         max - min + 1,
         (i) => DropdownMenuItem(value: min + i, child: Text('${min + i}')),
       ),
-      onChanged: c.moving || c.presetBusy
+      onChanged:
+          c.moving || c.presetBusy || (label == 'Focus' && c.autofocus != false)
           ? null
           : (v) {
               if (v != null) c.setSpeed(label, v);
