@@ -569,9 +569,9 @@ class _ControlShellState extends State<ControlShell>
   Widget _controlDeck() => LayoutBuilder(
     builder: (context, constraints) {
       const columnHeight = 194.0;
-      final wide = constraints.maxWidth >= 340;
-      final padWidth = wide ? 168.0 : 132.0;
-      final movementGap = wide ? 24.0 : 16.0;
+      final wide = constraints.maxWidth >= 348;
+      final padWidth = wide ? 168.0 : 120.0;
+      final movementGap = wide ? 24.0 : 12.0;
       const header = Text(
         'SPEED',
         style: TextStyle(
@@ -585,11 +585,14 @@ class _ControlShellState extends State<ControlShell>
         height: columnHeight,
         child: LayoutBuilder(
           builder: (context, size) {
-            final fieldWidth = (size.maxWidth - 36) / 2;
+            final columnWidth = (size.maxWidth - 36) / 2;
+            // Keep room for two digits, the arrow, padding, and borders.
+            final reduction = (columnWidth - 60).clamp(0.0, 10.0);
+            final fieldWidth = columnWidth - reduction;
             Widget lensRow(String label, int speed, bool focus) => Row(
               children: [
                 SizedBox(width: fieldWidth, child: _speed(label, speed, 0, 7)),
-                const SizedBox(width: 6),
+                SizedBox(width: 6 + reduction),
                 Expanded(
                   child: _lensButton(
                     focus ? 'Focus near' : 'Zoom out',
@@ -619,11 +622,17 @@ class _ControlShellState extends State<ControlShell>
                 Row(
                   children: [
                     Expanded(
-                      child: _speed(
-                        'Pan',
-                        c.panSpeed,
-                        1,
-                        c.syncPanTilt ? 20 : 24,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: SizedBox(
+                          width: fieldWidth,
+                          child: _speed(
+                            'Pan',
+                            c.panSpeed,
+                            1,
+                            c.syncPanTilt ? 20 : 24,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 4),
@@ -654,7 +663,15 @@ class _ControlShellState extends State<ControlShell>
                       ),
                     ),
                     const SizedBox(width: 4),
-                    Expanded(child: _speed('Tilt', c.tiltSpeed, 1, 20)),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: SizedBox(
+                          width: fieldWidth,
+                          child: _speed('Tilt', c.tiltSpeed, 1, 20),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 SizedBox(
@@ -670,7 +687,7 @@ class _ControlShellState extends State<ControlShell>
           },
         ),
       );
-      if (constraints.maxWidth < 280) {
+      if (constraints.maxWidth < 288) {
         return Column(
           children: [
             SizedBox(
