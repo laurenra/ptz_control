@@ -66,6 +66,8 @@ class PtzController extends ChangeNotifier {
   final Set<int> _pendingQueries = {};
   bool _storageHealthy = true;
   String? message;
+  // Speeds are controller selections included in movement commands. The common
+  // VISCA inquiries do not report the camera's current command-speed settings.
   int panSpeed = 8, tiltSpeed = 6, zoomSpeed = 3, focusSpeed = 3;
   int? pan, tilt, zoom;
   bool? autofocus;

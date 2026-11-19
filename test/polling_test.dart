@@ -15,12 +15,18 @@ void main() {
   late Camera camera;
   late List<List<int>> received;
   int focusMode = 2;
+  int exposureMode = 3;
+  int whiteBalanceMode = 5;
+  int iris = 9;
   Completer<Datagram>? holdExposure;
   Completer<Datagram>? holdCommand;
   void Function(int)? onInquiry;
 
   setUp(() async {
     focusMode = 2;
+    exposureMode = 3;
+    whiteBalanceMode = 5;
+    iris = 9;
     holdExposure = null;
     holdCommand = null;
     onInquiry = null;
@@ -42,8 +48,9 @@ void main() {
             0x12 => [0x90, 0x50, 0, 0, 0, 1, 0, 0, 0, 2, 255],
             0x47 => [0x90, 0x50, 0, 0, 0, 3, 255],
             0x38 => [0x90, 0x50, focusMode, 255],
-            0x39 => [0x90, 0x50, 3, 255],
-            0x35 => [0x90, 0x50, 5, 255],
+            0x39 => [0x90, 0x50, exposureMode, 255],
+            0x35 => [0x90, 0x50, whiteBalanceMode, 255],
+            0x4b => [0x90, 0x50, ...Visca.positionNibbles(iris), 255],
             _ => [0x90, 0x50, 0, 0, 0, 9, 255],
           };
           server.send(response, p.address, p.port);
@@ -88,6 +95,59 @@ void main() {
     0x43,
     0x44,
   ];
+
+  test('startup populates shared camera modes and iris', () {
+    expect(c.selected, camera);
+    expect(inquiries(), allRegisters);
+    expect(c.autofocus, true);
+    expect(c.exposureMode, 3);
+    expect(c.aperture, 9);
+    expect(c.whiteBalanceMode, 5);
+    expect(c.connection, CameraConnection.connected);
+  });
+
+  test(
+    'resume refreshes the selected camera after external settings change',
+    () async {
+      final other = Camera(
+        id: 'b',
+        name: 'Other',
+        host: camera.host,
+        port: camera.port,
+      );
+      await c.select(other);
+      c.panSpeed = 11;
+      c.tiltSpeed = 12;
+      c.zoomSpeed = 5;
+      c.focusSpeed = 6;
+      await c.setPaused(true);
+      expect(c.connection, CameraConnection.paused);
+      received.clear();
+
+      focusMode = 3;
+      exposureMode = 0x0b;
+      whiteBalanceMode = 2;
+      iris = 17;
+      await c.setPaused(false);
+
+      expect(c.selected, other);
+      expect(inquiries(), allRegisters);
+      expect(c.autofocus, false);
+      expect(c.exposureMode, 0x0b);
+      expect(c.aperture, 17);
+      expect(c.whiteBalanceMode, 2);
+      expect(c.connection, CameraConnection.connected);
+      // Command speeds are app selections, not values returned by VISCA inquiries.
+      expect(
+        [c.panSpeed, c.tiltSpeed, c.zoomSpeed, c.focusSpeed],
+        [11, 12, 5, 6],
+      );
+
+      received.clear();
+      await c.setPaused(false);
+      expect(inquiries(), isEmpty);
+    },
+  );
 
   test(
     'switching cameras reads fresh focus mode before other settings',

@@ -85,6 +85,22 @@ class _UiController extends PtzController {
   }
 }
 
+class _LifecycleUiController extends _UiController {
+  int initializations = 0;
+  final pauses = <bool>[];
+
+  @override
+  Future<void> initialize() async {
+    initializations++;
+    await super.initialize();
+  }
+
+  @override
+  Future<void> setPaused(bool paused) async {
+    pauses.add(paused);
+  }
+}
+
 class _MovementUiController extends _UiController {
   Object? _owner;
   int movementStops = 0;
@@ -124,6 +140,43 @@ class _MovementUiController extends _UiController {
 }
 
 void main() {
+  testWidgets(
+    'app startup and lifecycle events reach the shared controller on any page',
+    (tester) async {
+      final c = _LifecycleUiController();
+      addTearDown(c.dispose);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpWidget(MyApp(controller: c));
+      await tester.pumpAndSettle();
+      expect(c.initializations, 1);
+
+      // Lifecycle handling belongs to the shell, even with Image selected.
+      await tester.tap(find.text('Image'));
+      await tester.pumpAndSettle();
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(c.pauses, [true, true, true, true, true, false]);
+      expect(c.initializations, 1);
+      expect(find.text('Image settings'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+
+      // Disposing the shell also removes its lifecycle observer.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      expect(c.pauses, hasLength(6));
+    },
+  );
+
   testWidgets('Control iris buttons follow exposure mode and show raw values', (
     tester,
   ) async {
