@@ -11,6 +11,8 @@ class HoldButton extends StatefulWidget {
     required this.onStop,
     required this.enabled,
     this.iconColor,
+    this.iconSize = 25,
+    this.iconWidget,
     this.tooltip,
     this.text,
     this.compact = false,
@@ -21,6 +23,8 @@ class HoldButton extends StatefulWidget {
   final VoidCallback onStop;
   final bool enabled;
   final Color? iconColor;
+  final double iconSize;
+  final Widget? iconWidget;
   final String? tooltip;
   final String? text;
   final bool compact;
@@ -152,14 +156,21 @@ class _HoldButtonState extends State<HoldButton> {
                               : Colors.white24,
                         ),
                       )
-                    : Icon(
-                        widget.icon,
-                        size: 25,
-                        color: _held
-                            ? const Color(0xff083b31)
-                            : widget.enabled
-                            ? widget.iconColor ?? Colors.white
-                            : Colors.white24,
+                    : IconTheme(
+                        data: IconThemeData(
+                          size: widget.iconSize,
+                          color: _held
+                              ? const Color(0xff083b31)
+                              : widget.enabled
+                              ? widget.iconColor ?? Colors.white
+                              : Colors.white24,
+                        ),
+                        child: widget.iconWidget != null
+                            ? FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: widget.iconWidget!,
+                              )
+                            : Icon(widget.icon),
                       ),
               ),
             ),

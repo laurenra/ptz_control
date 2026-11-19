@@ -10,6 +10,7 @@ import '../services/visca_protocol.dart';
 import 'camera_editor.dart';
 import 'connection_status.dart';
 import 'hold_button.dart';
+import 'focus_depth_icon.dart';
 import 'preset_editor.dart';
 
 const _accent = Color(0xff62dfc4);
@@ -571,100 +572,103 @@ class _ControlShellState extends State<ControlShell>
       final wide = constraints.maxWidth >= 340;
       final padWidth = wide ? 168.0 : 132.0;
       final movementGap = wide ? 24.0 : 16.0;
-      final lensGap = wide ? 12.0 : 10.0;
-      final header = Row(
-        children: [
-          const SizedBox(
-            width: 64,
-            child: Text(
-              'SPEED',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1.2,
-              ),
-            ),
-          ),
-          SizedBox(width: lensGap),
-          Expanded(
-            child: Tooltip(
-              message:
-                  'Link both speeds from 1 to 20, the shared pan/tilt range.',
-              child: _check(
-                'Sync pan / tilt',
-                c.syncPanTilt,
-                c.setSyncPanTilt,
-                enabled: !c.moving && !c.presetBusy,
-                fontSize: 10,
-              ),
-            ),
-          ),
-        ],
+      const header = Text(
+        'SPEED',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.2,
+        ),
       );
-      final speedAndLens = Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            key: const Key('speed-controls'),
-            width: 64,
-            height: columnHeight,
-            child: _speeds(),
-          ),
-          SizedBox(width: lensGap),
-          Expanded(
-            child: SizedBox(
-              key: const Key('lens-controls'),
-              height: columnHeight,
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 44,
-                    child: _lensButton(
-                      'Zoom out',
-                      Icons.remove,
-                      false,
-                      false,
-                      'Zoom −',
-                    ),
+      final speedAndLens = SizedBox(
+        key: const Key('speed-controls'),
+        height: columnHeight,
+        child: LayoutBuilder(
+          builder: (context, size) {
+            final fieldWidth = (size.maxWidth - 36) / 2;
+            Widget lensRow(String label, int speed, bool focus) => Row(
+              children: [
+                SizedBox(width: fieldWidth, child: _speed(label, speed, 0, 7)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _lensButton(
+                    focus ? 'Focus near' : 'Zoom out',
+                    focus ? Icons.visibility_outlined : Icons.zoom_out,
+                    focus,
+                    false,
+                    iconSize: 23,
+                    iconWidget: focus ? const FocusDepthIcon(far: false) : null,
                   ),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    height: 44,
-                    child: _lensButton(
-                      'Zoom in',
-                      Icons.add,
-                      false,
-                      true,
-                      'Zoom +',
-                    ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _lensButton(
+                    focus ? 'Focus far' : 'Zoom in',
+                    focus ? Icons.visibility_outlined : Icons.zoom_in,
+                    focus,
+                    true,
+                    iconSize: 32,
+                    iconWidget: focus ? const FocusDepthIcon(far: true) : null,
                   ),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    height: 44,
-                    child: _lensButton(
-                      'Focus near',
-                      Icons.filter_center_focus,
-                      true,
-                      false,
-                      'Focus near',
+                ),
+              ],
+            );
+            return Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _speed(
+                        'Pan',
+                        c.panSpeed,
+                        1,
+                        c.syncPanTilt ? 20 : 24,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    height: 44,
-                    child: _lensButton(
-                      'Focus far',
-                      Icons.center_focus_strong,
-                      true,
-                      true,
-                      'Focus far',
+                    const SizedBox(width: 4),
+                    SizedBox(
+                      width: 28,
+                      height: 44,
+                      child: Semantics(
+                        toggled: c.syncPanTilt,
+                        child: IconButton(
+                          key: const Key('sync-pan-tilt'),
+                          tooltip: c.syncPanTilt
+                              ? 'Disable pan / tilt sync'
+                              : 'Enable pan / tilt sync',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 28,
+                            height: 44,
+                          ),
+                          iconSize: 21,
+                          icon: Icon(
+                            c.syncPanTilt ? Icons.link : Icons.link_off,
+                          ),
+                          color: c.syncPanTilt ? _accent : _muted,
+                          onPressed: c.moving || c.presetBusy
+                              ? null
+                              : () => c.setSyncPanTilt(!c.syncPanTilt),
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
+                    const SizedBox(width: 4),
+                    Expanded(child: _speed('Tilt', c.tiltSpeed, 1, 20)),
+                  ],
+                ),
+                SizedBox(
+                  height: 44,
+                  child: lensRow('Zoom', c.zoomSpeed, false),
+                ),
+                SizedBox(
+                  height: 44,
+                  child: lensRow('Focus', c.focusSpeed, true),
+                ),
+              ],
+            );
+          },
+        ),
       );
       if (constraints.maxWidth < 280) {
         return Column(
@@ -676,7 +680,7 @@ class _ControlShellState extends State<ControlShell>
               child: _directionPad(),
             ),
             const SizedBox(height: 12),
-            header,
+            Align(alignment: Alignment.centerLeft, child: header),
             const SizedBox(height: 6),
             speedAndLens,
           ],
@@ -862,18 +866,6 @@ class _ControlShellState extends State<ControlShell>
     );
   }
 
-  Widget _speeds() => Column(
-    children: [
-      _speed('Pan', c.panSpeed, 1, c.syncPanTilt ? 20 : 24),
-      const SizedBox(height: 6),
-      _speed('Tilt', c.tiltSpeed, 1, 20),
-      const SizedBox(height: 6),
-      _speed('Zoom', c.zoomSpeed, 0, 7),
-      const SizedBox(height: 6),
-      _speed('Focus', c.focusSpeed, 0, 7),
-    ],
-  );
-
   Widget _speed(String label, int value, int min, int max) => SizedBox(
     height: 44,
     child: DropdownButtonFormField<int>(
@@ -908,12 +900,14 @@ class _ControlShellState extends State<ControlShell>
     String label,
     IconData icon,
     bool focus,
-    bool positive,
-    String text,
-  ) => HoldButton(
+    bool positive, {
+    double iconSize = 25,
+    Widget? iconWidget,
+  }) => HoldButton(
     label: label,
     icon: icon,
-    text: text,
+    iconSize: iconSize,
+    iconWidget: iconWidget,
     compact: true,
     enabled: c.canOperate && (!focus || c.autofocus == false),
     onStart: () => c.startMotion(

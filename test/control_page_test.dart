@@ -5,6 +5,8 @@ import 'package:ptz_control/controller.dart';
 import 'package:ptz_control/main.dart';
 import 'package:ptz_control/models/camera.dart';
 import 'package:ptz_control/models/camera_preset.dart';
+import 'package:ptz_control/widgets/focus_depth_icon.dart';
+import 'package:ptz_control/widgets/hold_button.dart';
 
 class _UiController extends PtzController {
   int stopCount = 0;
@@ -186,6 +188,11 @@ void main() {
         'CAMERA WORKSPACE',
         'PAN & TILT',
         'LENS',
+        'Sync pan / tilt',
+        'Zoom −',
+        'Zoom +',
+        'Focus near',
+        'Focus far',
         'Position in camera-native units',
         'Hold to move',
         'Stop all movement',
@@ -208,48 +215,79 @@ void main() {
       expect(find.text('SPEED'), findsOneWidget);
       final movement = tester.getRect(find.byKey(const Key('movement-grid')));
       final speeds = tester.getRect(find.byKey(const Key('speed-controls')));
-      final lens = tester.getRect(find.byKey(const Key('lens-controls')));
       expect(movement.top, closeTo(speeds.top, .1));
       expect(movement.bottom, closeTo(speeds.bottom, .1));
-      expect(lens.top, closeTo(speeds.top, .1));
-      expect(lens.bottom, closeTo(speeds.bottom, .1));
-      final speedFields = find.byType(DropdownButtonFormField<int>);
-      final firstBorder = tester.getRect(
-        find.descendant(
-          of: speedFields.first,
-          matching: find.byType(InputDecorator),
+      Rect speedRect(String label) => tester.getRect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is InputDecorator && widget.decoration.labelText == label,
         ),
       );
-      final lastBorder = tester.getRect(
-        find.descendant(
-          of: speedFields.last,
-          matching: find.byType(InputDecorator),
-        ),
-      );
-      expect(firstBorder.top, closeTo(movement.top, .1));
-      expect(lastBorder.bottom, closeTo(movement.bottom, .1));
+      final pan = speedRect('Pan');
+      final tilt = speedRect('Tilt');
+      final zoom = speedRect('Zoom');
+      final focus = speedRect('Focus');
+      final sync = tester.getRect(find.byKey(const Key('sync-pan-tilt')));
+      expect(pan.top, closeTo(movement.top, .1));
+      expect(tilt.top, closeTo(pan.top, .1));
+      expect(sync.left, greaterThan(pan.right));
+      expect(sync.right, lessThan(tilt.left));
+      expect(sync.center.dy, closeTo(pan.center.dy, .1));
+      expect(zoom.left, closeTo(pan.left, .1));
+      expect(focus.left, closeTo(pan.left, .1));
+      expect(zoom.top, greaterThan(pan.bottom));
+      expect(focus.top, greaterThan(zoom.bottom));
+      expect(focus.bottom, closeTo(movement.bottom, .1));
       expect(
-        lens.right,
+        tilt.right,
         closeTo(
           tester.getRect(find.byKey(const ValueKey('preset-3'))).right,
           .1,
         ),
       );
       expect(speeds.left - movement.right, greaterThan(12));
-      final speedHeading = tester.getRect(find.text('SPEED'));
-      final syncLabel = tester.getRect(find.text('Sync pan / tilt'));
-      expect(syncLabel.left, greaterThan(speedHeading.right));
-      expect((syncLabel.center.dy - speedHeading.center.dy).abs(), lessThan(3));
-      final syncCheckbox = find.descendant(
-        of: find
-            .ancestor(
-              of: find.text('Sync pan / tilt'),
-              matching: find.byType(InkWell),
-            )
-            .first,
-        matching: find.byType(Checkbox),
+      Rect lensRect(String tooltip) =>
+          tester.getRect(find.byTooltip('$tooltip · hold to move'));
+      final zoomOut = lensRect('Zoom out');
+      final zoomIn = lensRect('Zoom in');
+      final focusNear = lensRect('Focus near');
+      final focusFar = lensRect('Focus far');
+      expect(zoomOut.left, greaterThan(zoom.right));
+      expect(zoomIn.left, greaterThan(zoomOut.right));
+      expect(zoomOut.center.dy, closeTo(zoom.center.dy, .1));
+      expect(zoomIn.center.dy, closeTo(zoom.center.dy, .1));
+      expect(focusNear.left, greaterThan(focus.right));
+      expect(focusFar.left, greaterThan(focusNear.right));
+      expect(focusNear.center.dy, closeTo(focus.center.dy, .1));
+      expect(focusFar.center.dy, closeTo(focus.center.dy, .1));
+      expect(
+        tester.getSize(find.byIcon(Icons.zoom_out)).width,
+        lessThan(tester.getSize(find.byIcon(Icons.zoom_in)).width),
       );
-      expect(tester.getTopLeft(syncCheckbox).dx, closeTo(lens.left, .1));
+      expect(
+        tester
+            .widgetList<FocusDepthIcon>(find.byType(FocusDepthIcon))
+            .map((icon) => icon.far),
+        [false, true],
+      );
+      final focusButtons = find.byWidgetPredicate(
+        (widget) => widget is HoldButton && widget.label.startsWith('Focus'),
+      );
+      expect(
+        tester
+            .widgetList<HoldButton>(focusButtons)
+            .every((button) => !button.enabled),
+        true,
+      );
+      c.autofocus = false;
+      c.notifyListeners();
+      await tester.pump();
+      expect(
+        tester
+            .widgetList<HoldButton>(focusButtons)
+            .every((button) => button.enabled),
+        true,
+      );
       final saveOption = tester.getRect(find.text('Save preset'));
       final apertureOption = tester.getRect(
         find.text('Use exposure from preset'),
@@ -307,11 +345,18 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
       await tester.pumpAndSettle();
       expect(c.stopCount, 2);
-      await tester.tap(find.text('Sync pan / tilt'));
+      await tester.tap(find.byKey(const Key('sync-pan-tilt')));
       await tester.pumpAndSettle();
       c.setSpeed('Tilt', 17);
       await tester.pumpAndSettle();
       expect([c.panSpeed, c.tiltSpeed], [17, 17]);
+      expect(find.byTooltip('Disable pan / tilt sync'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('sync-pan-tilt')));
+      await tester.pumpAndSettle();
+      c.setSpeed('Pan', 24);
+      await tester.pumpAndSettle();
+      expect([c.panSpeed, c.tiltSpeed], [24, 17]);
+      expect(find.byTooltip('Enable pan / tilt sync'), findsOneWidget);
       await tester.tap(find.text('Save preset'));
       await tester.pumpAndSettle();
       expect(find.text('Save exposure with preset'), findsOneWidget);
