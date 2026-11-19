@@ -127,7 +127,7 @@ void main() {
     expect(inquiries(), imageRegisters);
     received.clear();
     await c.refreshControlStatus();
-    expect(inquiries(), [0x38, 0x39, 0x35]);
+    expect(inquiries(), [0x38, 0x39, 0x35, 0x4b]);
     received.clear();
     await c.refresh();
     expect(inquiries(), allRegisters);
@@ -201,7 +201,7 @@ void main() {
       final changed = c.command('Increase gain', Visca.camera(0x0c, [2]));
       server.send([0x90, 0x50, 3, 255], packet.address, packet.port);
       await Future.wait([status, changed]);
-      expect(inquiries(), [0x38, 0x39, 0x35, 0x4c]);
+      expect(inquiries(), [0x38, 0x39, 0x35, 0x4b, 0x4c]);
       expect(c.gain, 9);
     },
   );

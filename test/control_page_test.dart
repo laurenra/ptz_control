@@ -124,6 +124,67 @@ class _MovementUiController extends _UiController {
 }
 
 void main() {
+  testWidgets('Control iris buttons follow exposure mode and show raw values', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = _MovementUiController();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(MyApp(controller: c));
+    await tester.pumpAndSettle();
+    final close = find.byTooltip('Aperture / iris: Close');
+    final open = find.byTooltip('Aperture / iris: Open');
+    final value = find.byKey(const ValueKey('image-value-11'));
+    IconButton button(Finder tooltip) => tester.widget<IconButton>(
+      find.ancestor(of: tooltip, matching: find.byType(IconButton)).first,
+    );
+    final label = tester.getRect(find.text('Aperture / iris'));
+    final focus = tester.getRect(find.byKey(const ValueKey('Focus-3')));
+    expect(label.top, greaterThan(focus.bottom));
+    expect(label.left, closeTo(focus.left, .1));
+    expect(tester.getRect(close).left, greaterThan(label.right));
+    expect(
+      tester.getRect(open).left,
+      greaterThan(tester.getRect(close).right - 1),
+    );
+    expect(tester.getRect(value).left, greaterThan(tester.getRect(open).right));
+    expect(tester.widget<Text>(value).data, '17');
+
+    for (final mode in [0, 0x0a, null, 0x7f, 3, 0x0b]) {
+      c.exposureMode = mode;
+      c.notifyListeners();
+      await tester.pump();
+      final enabled = mode == 3 || mode == 0x0b;
+      expect(button(close).onPressed != null, enabled);
+      expect(button(open).onPressed != null, enabled);
+      if (enabled) {
+        await tester.tap(close);
+        await tester.tap(open);
+      }
+    }
+    expect(c.commands, [
+      [0x81, 1, 4, 0x0b, 3, 0xff],
+      [0x81, 1, 4, 0x0b, 2, 0xff],
+      [0x81, 1, 4, 0x0b, 3, 0xff],
+      [0x81, 1, 4, 0x0b, 2, 0xff],
+    ]);
+    c.imageValues[0x4b] = 9;
+    c.notifyListeners();
+    await tester.pump();
+    expect(tester.widget<Text>(value).data, '9');
+    c.imageValues[0x4b] = null;
+    c.startPanTilt('Right', 2, 3);
+    await tester.pump();
+    expect(tester.widget<Text>(value).data, '—');
+    expect(button(open).onPressed, isNull);
+    expect(button(close).onPressed, isNull);
+    await c.endMotion();
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('Autofocus switches mode and disables manual focus controls', (
     tester,
   ) async {
@@ -290,12 +351,12 @@ void main() {
       '—',
     );
 
-    final trigger = find.text('Trigger one-push balance');
+    final trigger = find.text('Trigger One-Push white balance');
     Future<void> openConfirmation() async {
       await tester.ensureVisible(trigger);
       await tester.tap(trigger);
       await tester.pumpAndSettle();
-      expect(find.text('Reset white balance with One Push?'), findsOneWidget);
+      expect(find.text('Reset white balance with One-Push?'), findsOneWidget);
       expect(c.commands, isEmpty);
     }
 
@@ -306,7 +367,7 @@ void main() {
     await openConfirmation();
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.text('Reset white balance with One Push?'), findsNothing);
+    expect(find.text('Reset white balance with One-Push?'), findsNothing);
     expect(c.commands, isEmpty);
     await openConfirmation();
     await tester.tap(find.text('Yes'));
@@ -354,16 +415,16 @@ void main() {
       ]) {
         expect(find.text(removed), findsNothing);
       }
-      expect(find.text('PAN: 1200'), findsOneWidget);
-      expect(find.text('TILT: -800'), findsOneWidget);
-      expect(find.text('ZOOM: 16384'), findsOneWidget);
+      expect(find.text('PAN: 1200'), findsNothing);
+      expect(find.text('TILT: -800'), findsNothing);
+      expect(find.text('ZOOM: 16384'), findsNothing);
       final exposureStatus = tester.getRect(
         find.text('EXPOSURE: Shutter priority'),
       );
       final balanceStatus = tester.getRect(find.text('WHITE BALANCE: Outdoor'));
       expect(
         exposureStatus.top,
-        greaterThan(tester.getRect(find.text('PAN: 1200')).bottom),
+        greaterThan(tester.getRect(find.text('Connected')).bottom),
       );
       expect(balanceStatus.center.dy, closeTo(exposureStatus.center.dy, .1));
       expect(balanceStatus.left, greaterThan(exposureStatus.right));

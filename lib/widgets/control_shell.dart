@@ -375,14 +375,6 @@ class _ControlShellState extends State<ControlShell>
         const SizedBox(height: 8),
         Row(
           children: [
-            _metric('PAN', c.pan),
-            _metric('TILT', c.tilt),
-            _metric('ZOOM', c.zoom),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
             _modeStatus('EXPOSURE', c.exposureModeLabel),
             const SizedBox(width: 12),
             _modeStatus('WHITE BALANCE', c.whiteBalanceModeLabel),
@@ -391,23 +383,6 @@ class _ControlShellState extends State<ControlShell>
       ],
     );
   }
-
-  Widget _metric(String label, int? value) => Expanded(
-    child: Align(
-      alignment: Alignment.centerLeft,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          '$label: ${value ?? '—'}',
-          style: const TextStyle(
-            fontSize: 11,
-            color: _muted,
-            fontFamily: 'monospace',
-          ),
-        ),
-      ),
-    ),
-  );
 
   Widget _modeStatus(String label, String value) => Expanded(
     child: Align(
@@ -469,16 +444,6 @@ class _ControlShellState extends State<ControlShell>
         _card(_status()),
         const SizedBox(height: 12),
         _controlDeck(),
-        const SizedBox(height: 8),
-        Center(
-          child: IconButton(
-            tooltip: 'Return camera home',
-            onPressed: c.canOperate && !c.moving
-                ? () => unawaited(c.command('Return home', Visca.home))
-                : null,
-            icon: const Icon(Icons.home_outlined, size: 22, color: _accent),
-          ),
-        ),
         _presets(),
         const SizedBox(height: 4),
         _presetSaveOptions(),
@@ -578,6 +543,30 @@ class _ControlShellState extends State<ControlShell>
         c.setMoveUntilStopped,
         enabled: c.canControl && !c.presetBusy,
         fontSize: 10,
+      );
+      final aperture = _stepSetting(
+        'Aperture / iris',
+        0x0b,
+        'Close',
+        'Open',
+        value: c.aperture,
+        compact: true,
+        enabled: !c.moving && [0x03, 0x0b].contains(c.exposureMode),
+      );
+      final home = IconButton(
+        tooltip: 'Return camera home',
+        onPressed: c.canOperate && !c.moving
+            ? () => unawaited(c.command('Return home', Visca.home))
+            : null,
+        icon: const Icon(Icons.home_outlined, size: 22, color: _accent),
+      );
+      final alignedHome = Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          // The first preset column reserves a 6-pixel gutter on the right.
+          width: constraints.maxWidth / 3 - 6,
+          child: Center(child: home),
+        ),
       );
       const header = Text(
         'SPEED',
@@ -724,6 +713,10 @@ class _ControlShellState extends State<ControlShell>
             Align(alignment: Alignment.centerLeft, child: header),
             const SizedBox(height: 6),
             speedAndLens,
+            const SizedBox(height: 6),
+            aperture,
+            const SizedBox(height: 28),
+            alignedHome,
           ],
         );
       }
@@ -748,6 +741,25 @@ class _ControlShellState extends State<ControlShell>
               ),
               SizedBox(width: movementGap),
               Expanded(child: speedAndLens),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SizedBox(
+                width: padWidth,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 20),
+                  child: alignedHome,
+                ),
+              ),
+              SizedBox(width: movementGap),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 20),
+                  child: aperture,
+                ),
+              ),
             ],
           ),
         ],
@@ -1034,7 +1046,7 @@ class _ControlShellState extends State<ControlShell>
               TextButton.icon(
                 onPressed: c.canOperate ? _confirmOnePushBalance : null,
                 icon: const Icon(Icons.wb_sunny_outlined, size: 18),
-                label: const Text('Trigger one-push balance'),
+                label: const Text('Trigger One-Push white balance'),
               ),
               _stepSetting('Red gain', 3, 'Lower', 'Higher', value: c.redGain),
               _stepSetting(
@@ -1101,7 +1113,7 @@ class _ControlShellState extends State<ControlShell>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reset white balance with One Push?'),
+        title: const Text('Reset white balance with One-Push?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1165,14 +1177,22 @@ class _ControlShellState extends State<ControlShell>
     String less,
     String more, {
     int? value,
+    bool compact = false,
+    bool enabled = true,
   }) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
     child: Row(
       children: [
-        Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+        Expanded(
+          child: Text(label, style: TextStyle(fontSize: compact ? 11 : 13)),
+        ),
         IconButton(
           tooltip: '$label: $less',
-          onPressed: c.canOperate
+          padding: compact ? EdgeInsets.zero : const EdgeInsets.all(8),
+          constraints: compact
+              ? const BoxConstraints.tightFor(width: 28, height: 32)
+              : null,
+          onPressed: c.canOperate && enabled
               ? () => unawaited(
                   c.command('$label: $less', Visca.camera(command, [3])),
                 )
@@ -1181,16 +1201,20 @@ class _ControlShellState extends State<ControlShell>
         ),
         IconButton(
           tooltip: '$label: $more',
-          onPressed: c.canOperate
+          padding: compact ? EdgeInsets.zero : const EdgeInsets.all(8),
+          constraints: compact
+              ? const BoxConstraints.tightFor(width: 28, height: 32)
+              : null,
+          onPressed: c.canOperate && enabled
               ? () => unawaited(
                   c.command('$label: $more', Visca.camera(command, [2])),
                 )
               : null,
           icon: const Icon(Icons.add_circle_outline, size: 21),
         ),
-        const SizedBox(width: 8),
+        SizedBox(width: compact ? 4 : 8),
         SizedBox(
-          width: 48,
+          width: compact ? 28 : 48,
           child: Tooltip(
             message: 'Raw VISCA value',
             child: Text(

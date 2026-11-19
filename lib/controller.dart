@@ -216,8 +216,8 @@ class PtzController extends ChangeNotifier {
   Future<void> refreshImageSettings() =>
       _query([0x38, 0x39, 0x35, ...Visca.imageValueInquiries.keys]);
 
-  /// The Control page displays focus, exposure, and white balance modes.
-  Future<void> refreshControlStatus() => _query([0x38, 0x39, 0x35]);
+  /// The Control page displays focus, exposure, white balance, and iris values.
+  Future<void> refreshControlStatus() => _query([0x38, 0x39, 0x35, 0x4b]);
 
   /// The preset dialog shows freshly queried exposure mode and iris values.
   Future<void> refreshPresetSettings() => _query([0x39, 0x4b]);
