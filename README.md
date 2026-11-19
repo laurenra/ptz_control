@@ -98,9 +98,10 @@ Build with Flutter and the Android SDK installed. Check the Android toolchain wi
 
 To compile, install, and launch the app on an Android device:
 
-1. On the phone, enable **Developer options → USB debugging**.
-2. Connect the phone by USB and accept the debugging authorization prompt.
-3. Run these commands from the project folder:
+1. You may have to turn off Auto Blocker on the phone. Go to **Settings → Privacy & Security → Auto Blocker** and turn it off.
+2. On the phone, enable **Developer options → USB debugging**.
+3. Connect the phone by USB and accept the debugging authorization prompt.
+4. Run these commands from the project folder:
 
    ```sh
    flutter pub get
