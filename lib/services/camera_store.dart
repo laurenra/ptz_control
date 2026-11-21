@@ -8,7 +8,7 @@ import '../models/camera.dart';
 abstract class CameraStore {
   int get nextId;
   Future<List<Camera>> load();
-  Future<void> save(List<Camera> cameras);
+  Future<void> save(List<Camera> cameras, {int? nextId});
 }
 
 class PreferencesCameraStore implements CameraStore {
@@ -68,15 +68,17 @@ class PreferencesCameraStore implements CameraStore {
   }
 
   @override
-  Future<void> save(List<Camera> cameras) async {
+  Future<void> save(List<Camera> cameras, {int? nextId}) async {
     if (cameras.length > 8) {
       throw ArgumentError('Up to eight cameras supported');
     }
     _validate(cameras);
-    final next = cameras.fold(
-      _nextId,
-      (id, camera) => math.max(id, camera.id + 1),
-    );
+    final next =
+        nextId ??
+        cameras.fold<int>(_nextId, (id, camera) => math.max(id, camera.id + 1));
+    if (next < 1 || next > 256 || cameras.any((camera) => camera.id >= next)) {
+      throw const FormatException('Invalid saved camera ID sequence');
+    }
     final prefs = await SharedPreferences.getInstance();
     final saved = await prefs.setString(
       key,

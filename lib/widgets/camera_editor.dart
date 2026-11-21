@@ -71,10 +71,9 @@ class _CameraEditorState extends State<CameraEditor> {
     final settings = (_host.text, _port.text, _local.text, _transport);
     if (settings == _lastConnectionSettings) return;
     _lastConnectionSettings = settings;
-    if (_connected || _limits != null) {
+    if (_connected) {
       setState(() {
         _connected = false;
-        _limits = null;
       });
     }
   }
@@ -221,7 +220,6 @@ class _CameraEditorState extends State<CameraEditor> {
                       : (value) => setState(() {
                           _transport = value!;
                           _connected = false;
-                          _limits = null;
                           if (_port.text == '1259' || _port.text == '52381') {
                             _port.text = value == ViscaTransport.sony
                                 ? '52381'

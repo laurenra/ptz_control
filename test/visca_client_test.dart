@@ -21,10 +21,11 @@ class MemoryStore implements CameraStore {
   @override
   Future<List<Camera>> load() async => cameras;
   @override
-  Future<void> save(List<Camera> value) async {
+  Future<void> save(List<Camera> value, {int? nextId}) async {
     cameras = value;
+    if (nextId != null) this.nextId = nextId;
     for (final camera in cameras) {
-      if (camera.id >= nextId) nextId = camera.id + 1;
+      if (camera.id >= this.nextId) this.nextId = camera.id + 1;
     }
   }
 }

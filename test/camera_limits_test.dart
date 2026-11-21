@@ -32,9 +32,9 @@ class _Store extends MemoryStore {
   _Store(super.cameras);
   bool fail = false;
   @override
-  Future<void> save(List<Camera> cameras) async {
+  Future<void> save(List<Camera> cameras, {int? nextId}) async {
     if (fail) throw StateError('Storage failure');
-    await super.save(cameras);
+    await super.save(cameras, nextId: nextId);
   }
 }
 

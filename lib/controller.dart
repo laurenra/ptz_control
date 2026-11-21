@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'models/camera.dart';
+import 'models/camera_settings.dart';
 import 'models/camera_preset.dart';
 import 'models/camera_limits.dart';
 import 'services/camera_limit_tester.dart';
@@ -94,6 +95,45 @@ class PtzController extends ChangeNotifier {
   Timer? _watchdog;
 
   bool get canControl => _client != null && !switching && !_paused;
+  bool get canTransferCameraSettings =>
+      !loading && !saving && !switching && !presetBusy && !_testingConnection;
+
+  CameraSettings exportCameraSettings() =>
+      CameraSettings(cameras: cameras, nextId: _store.nextId);
+
+  Future<bool> importCameraSettings(CameraSettings settings) async {
+    if (!canTransferCameraSettings || _disposed) return false;
+    saving = switching = true;
+    message = null;
+    _notify();
+    try {
+      await endMotion();
+      // Persist the entire validated setup and sequence in one write. Failure
+      // leaves the existing list, selection, and UDP connection intact.
+      await _store.save(settings.cameras, nextId: settings.nextId);
+      if (_disposed) return false;
+      final previous = selected;
+      final next = settings.cameras.firstWhere(
+        (camera) =>
+            camera.id == previous?.id &&
+            camera.host == previous?.host &&
+            camera.port == previous?.port,
+        orElse: () => settings.cameras.first,
+      );
+      cameras = List.of(settings.cameras);
+      _storageHealthy = true;
+      switching = false;
+      await select(next);
+      return true;
+    } catch (error) {
+      message = 'Could not import camera settings: $error';
+      return false;
+    } finally {
+      saving = switching = false;
+      _notify();
+    }
+  }
+
   int get nextCameraId {
     final used = cameras.map((camera) => camera.id).toSet();
     // Continue the saved sequence across removals and restarts. Once 255 has

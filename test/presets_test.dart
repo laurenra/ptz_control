@@ -421,8 +421,8 @@ class _FailingStore extends MemoryStore {
   _FailingStore(super.cameras, this.fail);
   final bool Function() fail;
   @override
-  Future<void> save(List<Camera> cameras) async {
+  Future<void> save(List<Camera> cameras, {int? nextId}) async {
     if (fail()) throw StateError('Test storage failure');
-    await super.save(cameras);
+    await super.save(cameras, nextId: nextId);
   }
 }

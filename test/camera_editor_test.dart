@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ptz_control/models/camera.dart';
 import 'package:ptz_control/models/camera_limits.dart';
+import 'package:ptz_control/services/camera_store.dart';
 import 'package:ptz_control/widgets/camera_editor.dart';
 import 'package:ptz_control/widgets/connection_status.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   Finder field(String label) => find.byWidgetPredicate(
@@ -220,6 +222,90 @@ void main() {
     zoomMin: 10,
     zoomMax: 80,
   );
+
+  for (final setting in [
+    'IPv4 address',
+    'Camera port',
+    'Local port',
+    'UDP packet format',
+  ]) {
+    testWidgets(
+      'preserves all six limits when editing $setting and reopening',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final store = PreferencesCameraStore();
+        const camera = Camera(
+          id: 7,
+          name: 'Stage',
+          host: '192.168.1.10',
+          port: 52381,
+          localPort: 52381,
+          transport: ViscaTransport.sony,
+          limits: limits,
+        );
+        await store.save([camera]);
+        final connected = setting != 'IPv4 address';
+        await openEditor(
+          tester,
+          camera: camera,
+          onTest: (_) async => connected,
+          onSave: (updated) async {
+            await store.save([updated]);
+            return true;
+          },
+        );
+        if (setting == 'UDP packet format') {
+          await tester.tap(find.text('VISCA over IP'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Raw VISCA').last);
+        } else {
+          await tester.enterText(
+            field(setting),
+            setting == 'IPv4 address' ? '192.168.1.11' : '50001',
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('Not connected'), findsOneWidget);
+        void expectLimits() {
+          for (final entry in {
+            'pan-min': '-30',
+            'pan-max': '40',
+            'tilt-min': '-20',
+            'tilt-max': '50',
+            'zoom-min': '10',
+            'zoom-max': '80',
+          }.entries) {
+            expect(
+              tester
+                  .widget<Text>(find.byKey(ValueKey('limit-${entry.key}')))
+                  .data,
+              entry.value,
+            );
+          }
+        }
+
+        expectLimits();
+        await tester.tap(find.text('Save camera'));
+        await tester.pumpAndSettle();
+        final saved = (await PreferencesCameraStore().load()).single;
+        expect(saved.id, camera.id);
+        expect(saved.limits!.toJson(), limits.toJson());
+        switch (setting) {
+          case 'IPv4 address':
+            expect(saved.host, '192.168.1.11');
+          case 'Camera port':
+            expect(saved.port, 50001);
+          case 'Local port':
+            expect(saved.localPort, 50001);
+          case 'UDP packet format':
+            expect(saved.transport, ViscaTransport.raw);
+            expect(saved.port, 1259);
+        }
+        await openEditor(tester, camera: saved, onTest: (_) async => false);
+        expectLimits();
+      },
+    );
+  }
 
   testWidgets(
     'limit test shows progress and table, and preserves results when saving camera',

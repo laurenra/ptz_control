@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../controller.dart';
 import '../models/camera.dart';
 import '../services/debug_log_export.dart';
+import '../services/camera_settings_transfer.dart';
 import '../services/visca_protocol.dart';
 import 'camera_editor.dart';
 import 'connection_status.dart';
@@ -29,6 +30,7 @@ class _ControlShellState extends State<ControlShell>
   late final PtzController c;
   int _tab = 0;
   bool _savingDebugLog = false;
+  bool _transferringCameraSettings = false;
 
   @override
   void initState() {
@@ -1253,6 +1255,31 @@ class _ControlShellState extends State<ControlShell>
             style: const TextStyle(color: _muted),
           ),
         ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            OutlinedButton.icon(
+              onPressed:
+                  !_transferringCameraSettings &&
+                      c.canTransferCameraSettings &&
+                      c.cameras.isNotEmpty
+                  ? _exportCameraSettings
+                  : null,
+              icon: const Icon(Icons.file_download_outlined, size: 18),
+              label: const Text('Export settings'),
+            ),
+            OutlinedButton.icon(
+              onPressed:
+                  !_transferringCameraSettings && c.canTransferCameraSettings
+                  ? _importCameraSettings
+                  : null,
+              icon: const Icon(Icons.file_upload_outlined, size: 18),
+              label: const Text('Import settings'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
         const Text(
           'Drag the handles to reorder cameras. This order is also used in the Selected camera list.',
           style: TextStyle(color: _muted, fontSize: 12, height: 1.5),
@@ -1394,6 +1421,93 @@ class _ControlShellState extends State<ControlShell>
       );
     }).toList(),
   );
+
+  void _transferMessage(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _exportCameraSettings() async {
+    if (_transferringCameraSettings || !c.canTransferCameraSettings) return;
+    setState(() => _transferringCameraSettings = true);
+    try {
+      final settings = c.exportCameraSettings();
+      await c.endMotion();
+      if (!mounted) return;
+      final saved = await saveCameraSettings(settings);
+      if (mounted && saved != null) {
+        _transferMessage('Camera settings exported.');
+      }
+    } catch (error) {
+      if (mounted) _transferMessage('Could not export camera settings: $error');
+    } finally {
+      if (mounted) setState(() => _transferringCameraSettings = false);
+    }
+  }
+
+  Future<void> _importCameraSettings() async {
+    if (_transferringCameraSettings || !c.canTransferCameraSettings) return;
+    setState(() => _transferringCameraSettings = true);
+    try {
+      await c.endMotion();
+      if (!mounted) return;
+      final settings = await pickCameraSettings();
+      if (!mounted || settings == null) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Import camera settings?'),
+          scrollable: true,
+          content: SizedBox(
+            width: 340,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Replace your ${c.cameras.length} saved cameras with these '
+                  '${settings.cameras.length} cameras? IDs, order, network settings, '
+                  'limits, and presets will be restored from the file.',
+                ),
+                const SizedBox(height: 12),
+                for (final camera in settings.cameras)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text('${camera.id}. ${camera.name}'),
+                    subtitle: Text(camera.endpoint),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Replace cameras'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+      final imported = await c.importCameraSettings(settings);
+      if (!mounted) return;
+      _transferMessage(
+        imported
+            ? 'Camera settings imported.'
+            : c.message ?? 'Camera is busy. Try importing again.',
+      );
+    } on FormatException catch (error) {
+      if (mounted) _transferMessage(error.message);
+    } catch (error) {
+      if (mounted) _transferMessage('Could not import camera settings: $error');
+    } finally {
+      if (mounted) setState(() => _transferringCameraSettings = false);
+    }
+  }
 
   Future<void> _delete(Camera camera) async {
     final confirmed = await showDialog<bool>(

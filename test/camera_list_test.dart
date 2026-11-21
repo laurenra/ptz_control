@@ -18,7 +18,7 @@ const cameras = [
 class _FailingStore extends MemoryStore {
   _FailingStore(super.cameras);
   @override
-  Future<void> save(List<Camera> cameras) async =>
+  Future<void> save(List<Camera> cameras, {int? nextId}) async =>
       throw StateError('Save failed');
 }
 
