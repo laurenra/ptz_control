@@ -7,7 +7,10 @@ import '../models/camera_settings.dart';
 
 Future<Uri?> saveCameraSettings(CameraSettings settings) {
   final exportedAt = DateTime.now().toUtc();
-  final timestamp = exportedAt.toIso8601String().replaceAll(':', '-');
+  final timestamp = exportedAt
+      .toIso8601String()
+      .replaceFirst(RegExp(r'\.\d+Z$'), 'Z')
+      .replaceAll(':', '-');
   return FilePicker.saveFile(
     dialogTitle: 'Export camera settings',
     fileName: 'ptz-cameras-$timestamp.json',

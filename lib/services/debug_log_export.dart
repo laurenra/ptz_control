@@ -23,7 +23,10 @@ Future<Uri?> saveDebugLog(List<CommandLog> logs) {
     if (log.bytes.isNotEmpty) text.writeln(Visca.hex(log.bytes));
     text.writeln();
   }
-  final timestamp = exportedAt.toIso8601String().replaceAll(':', '-');
+  final timestamp = exportedAt
+      .toIso8601String()
+      .replaceFirst(RegExp(r'\.\d+Z$'), 'Z')
+      .replaceAll(':', '-');
   return FilePicker.saveFile(
     dialogTitle: 'Save debug log',
     fileName: 'ptz-debug-$timestamp.txt',
