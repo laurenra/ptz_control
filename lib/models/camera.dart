@@ -95,6 +95,9 @@ class Camera {
   };
 
   factory Camera.fromJson(Map<String, dynamic> json) {
+    final info = json['info'] == null
+        ? null
+        : CameraInfo.fromJson(json['info'] as Map<String, dynamic>);
     final camera = Camera(
       id: json['id'] as int,
       name: json['name'] as String,
@@ -105,9 +108,7 @@ class Camera {
       limits: json['limits'] == null
           ? null
           : CameraLimits.fromJson(json['limits'] as Map<String, dynamic>),
-      info: json['info'] == null
-          ? null
-          : CameraInfo.fromJson(json['info'] as Map<String, dynamic>),
+      info: info == null || info.isEmpty ? null : info,
       presets: List.unmodifiable(
         (json['presets'] as List? ?? []).map(
           (p) => CameraPreset.fromJson(p as Map<String, dynamic>),

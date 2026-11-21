@@ -59,10 +59,10 @@ class CameraInfo {
   }
 
   Map<String, dynamic> toJson() => {
-    if (manufacturer != null) 'manufacturer': manufacturer,
-    if (model != null) 'model': model,
-    if (serialNumber != null) 'serialNumber': serialNumber,
-    if (macAddress != null) 'macAddress': macAddress,
+    'manufacturer': manufacturer,
+    'model': model,
+    'serialNumber': serialNumber,
+    'macAddress': macAddress,
     if (sourceHost != null) 'sourceHost': sourceHost,
   };
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'camera.dart';
+import 'camera_info.dart';
 
 /// Portable camera configuration. Array order is the user's display order.
 class CameraSettings {
@@ -19,7 +20,7 @@ class CameraSettings {
         Camera.fromJson(camera.toJson());
       } catch (_) {
         throw FormatException(
-          'Camera ${index + 1} has invalid settings. Check its ID, address, ports, limits, and presets.',
+          'Camera ${index + 1} has invalid settings. Check its ID, address, ports, camera info, limits, and presets.',
         );
       }
     }
@@ -43,7 +44,13 @@ class CameraSettings {
       'version': version,
       'exportedAt': (exportedAt ?? DateTime.now()).toUtc().toIso8601String(),
       'nextId': nextId,
-      'cameras': cameras.map((camera) => camera.toJson()).toList(),
+      'cameras': [
+        for (final camera in cameras)
+          {
+            ...camera.toJson(),
+            'info': (camera.info ?? const CameraInfo()).toJson(),
+          },
+      ],
     };
     return '${const JsonEncoder.withIndent('  ').convert(data)}\n';
   }
@@ -82,7 +89,7 @@ class CameraSettings {
         cameras.add(Camera.fromJson(entry as Map<String, dynamic>));
       } catch (_) {
         throw FormatException(
-          'Camera ${index + 1} has invalid settings. Check its ID, address, ports, limits, and presets.',
+          'Camera ${index + 1} has invalid settings. Check its ID, address, ports, camera info, limits, and presets.',
         );
       }
     }

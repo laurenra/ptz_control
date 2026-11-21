@@ -10,7 +10,7 @@ import 'package:ptz_control/main.dart';
 import 'package:ptz_control/models/camera_settings.dart';
 import 'package:ptz_control/services/camera_settings_transfer.dart';
 
-import 'camera_settings_test.dart' show settingsCameras;
+import 'camera_settings_test.dart' show settingsCameras, settingsCameraInfo;
 import 'visca_client_test.dart' show MemoryStore;
 
 final class _SettingsFile extends PlatformFile {
@@ -128,6 +128,8 @@ void main() {
     'export uses JSON and a fixed snapshot; cancel and errors are recoverable',
     (tester) async {
       final c = await openCameras(tester);
+      await c.saveCamera(settingsCameras.last.withInfo(settingsCameraInfo));
+      await tester.pumpAndSettle();
       final export = find.widgetWithText(OutlinedButton, 'Export settings');
       final import = find.widgetWithText(OutlinedButton, 'Import settings');
       await tester.tap(export);
@@ -140,6 +142,10 @@ void main() {
       expect(picker.savedMimeType, 'application/json');
       final source = utf8.decode(picker.savedBytes!);
       expect(CameraSettings.decode(source).cameras.single.id, 1);
+      expect(
+        jsonDecode(source)['cameras'][0]['info'],
+        settingsCameraInfo.toJson(),
+      );
       await c.saveCamera(settingsCameras.first);
       await tester.pump();
       expect(utf8.decode(picker.savedBytes!), source);
@@ -215,6 +221,24 @@ void main() {
       expect(c.selected!.id, 1);
       expect(c.nextCameraId, 10);
       expect(find.text('Camera settings imported.'), findsOneWidget);
+      expect(c.store.cameras.first.info!.toJson(), settingsCameraInfo.toJson());
+      await tester.tap(find.byTooltip('Edit Stage – 三'));
+      await tester.pumpAndSettle();
+      for (final entry in {
+        'manufacturer': 'Example Camera Co',
+        'model': 'PTZ 20X',
+        'serial': 'SN-123',
+        'mac': '02:AA:BB:CC:DD:01',
+      }.entries) {
+        expect(
+          tester
+              .widget<Text>(find.byKey(ValueKey('camera-info-${entry.key}')))
+              .data,
+          entry.value,
+        );
+      }
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
       tester.view.physicalSize = const Size(320, 640);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);

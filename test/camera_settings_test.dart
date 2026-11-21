@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ptz_control/controller.dart';
 import 'package:ptz_control/models/camera.dart';
+import 'package:ptz_control/models/camera_info.dart';
 import 'package:ptz_control/models/camera_limits.dart';
 import 'package:ptz_control/models/camera_preset.dart';
 import 'package:ptz_control/models/camera_settings.dart';
@@ -10,6 +11,14 @@ import 'package:ptz_control/services/camera_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'visca_client_test.dart' show MemoryStore;
+
+const settingsCameraInfo = CameraInfo(
+  manufacturer: 'Example Camera Co',
+  model: 'PTZ 20X',
+  serialNumber: 'SN-123',
+  macAddress: '02:AA:BB:CC:DD:01',
+  sourceHost: '192.0.2.3',
+);
 
 const settingsCameras = [
   Camera(
@@ -19,6 +28,7 @@ const settingsCameras = [
     port: 52381,
     localPort: 52381,
     transport: ViscaTransport.sony,
+    info: settingsCameraInfo,
     limits: CameraLimits(
       panMin: -2448,
       panMax: 2448,
@@ -59,6 +69,19 @@ void main() {
       final json = jsonDecode(source);
       expect(json['version'], 1);
       expect(json['exportedAt'], '2026-11-21T00:00:00.000Z');
+      expect(json['cameras'][0]['info'], {
+        'manufacturer': 'Example Camera Co',
+        'model': 'PTZ 20X',
+        'serialNumber': 'SN-123',
+        'macAddress': '02:AA:BB:CC:DD:01',
+        'sourceHost': '192.0.2.3',
+      });
+      expect(json['cameras'][1]['info'], {
+        'manufacturer': null,
+        'model': null,
+        'serialNumber': null,
+        'macAddress': null,
+      });
       final restored = CameraSettings.decode(source);
       expect(restored.nextId, 10);
       expect(
@@ -68,6 +91,24 @@ void main() {
       expect(() => restored.cameras.clear(), throwsUnsupportedError);
     },
   );
+
+  test('imports partial camera info and older files without camera info', () {
+    final camera = settingsCameras.first.withInfo(
+      const CameraInfo(model: 'Reported model'),
+    );
+    final source = CameraSettings(cameras: [camera], nextId: 4).encode();
+    final restored = CameraSettings.decode(source).cameras.single;
+    expect(restored.info!.model, 'Reported model');
+    expect(restored.info!.manufacturer, isNull);
+    expect(restored.info!.serialNumber, isNull);
+    expect(restored.info!.macAddress, isNull);
+    final legacy = jsonDecode(source) as Map<String, dynamic>;
+    (legacy['cameras'][0] as Map).remove('info');
+    expect(
+      CameraSettings.decode(jsonEncode(legacy)).cameras.single.info,
+      isNull,
+    );
+  });
 
   test('rejects invalid JSON, formats, versions, counters and camera data', () {
     final valid = CameraSettings(cameras: settingsCameras, nextId: 10).encode();
@@ -98,6 +139,21 @@ void main() {
         {'port': 0},
         {'localPort': 65536},
         {'transport': 'tcp'},
+        {'info': 'invalid'},
+        {
+          'info': {'manufacturer': 123},
+        },
+        {
+          'info': {
+            'model': ['invalid'],
+          },
+        },
+        {
+          'info': {'serialNumber': 'x' * 257},
+        },
+        {
+          'info': {'macAddress': 'not-a-mac'},
+        },
         {
           'limits': {'panMin': 5},
         },

@@ -153,7 +153,11 @@ The identity lookup uses read-only [ONVIF device operations](https://www.onvif.o
 
 On **Cameras** → **Your cameras**, choose **Export settings** and select a location for the `.json` file. Exports contain every saved camera in display order, including IDs, names, IPv4 addresses, UDP packet formats, camera and local ports, measured pan/tilt/zoom limits, retrieved device identity, and local preset names and snapshots. The next-ID counter is included so its sequence continues when the file is restored.
 
+Each exported camera includes an `info` object with `manufacturer`, `model`, `serialNumber`, and `macAddress`; details not yet retrieved or not reported by the camera are `null`. When available, `sourceHost` records the IP queried. Use **Get camera info** in the editor and **Save camera** before exporting to include newly retrieved details. Export uses saved settings and does not query cameras again.
+
 Choose **Import settings**, select an exported JSON file, and review the listed cameras. **Replace cameras** replaces the entire saved camera list with the file’s contents; **Cancel** keeps the current setup. Import preserves a selection when the same ID and camera endpoint are present; otherwise it selects the first imported camera. A camera may remain offline if its network is unavailable on the receiving device.
+
+Import restores all available camera info and displays it when reopening **Edit camera**, even if the camera is offline. Partial information and older files without an `info` object are supported.
 
 Files use readable UTF-8 JSON with a format marker (`ptz-control-camera-settings`), a schema `version` (currently `1`), an `exportedAt` timestamp, `nextId`, and an ordered `cameras` array. Limits and presets stay nested under their camera. The file format version is separate from the app’s internal preferences version. Imports validate the whole file before saving, including unique IDs in 1–255, valid addresses and ports, limits, presets, and the eight-camera maximum. Invalid files, unsupported versions, and canceled dialogs keep the saved setup intact. Files larger than 1 MB are rejected.
 

@@ -1468,6 +1468,7 @@ class _ControlShellState extends State<ControlShell>
                 Text(
                   'Replace your ${c.cameras.length} saved cameras with these '
                   '${settings.cameras.length} cameras? IDs, order, network settings, '
+                  'camera info (manufacturer, model, serial number, and MAC address), '
                   'limits, and presets will be restored from the file.',
                 ),
                 const SizedBox(height: 12),
