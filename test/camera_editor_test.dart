@@ -33,6 +33,7 @@ void main() {
                 context: context,
                 builder: (_) => CameraEditor(
                   camera: camera,
+                  newCameraId: 42,
                   onSave: onSave ?? (_) async => true,
                   onTest: onTest,
                   onTestLimits:
@@ -82,6 +83,7 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(tested.single.host, '192.168.1.123');
+    expect(tested.single.id, 42);
     expect(tested.single.port, 50000);
     expect(tested.single.localPort, 50001);
     expect(tested.single.transport, ViscaTransport.sony);
@@ -128,7 +130,7 @@ void main() {
       await openEditor(
         tester,
         camera: const Camera(
-          id: 'a',
+          id: 1,
           name: 'Stage',
           host: '192.168.1.10',
           port: 1259,
@@ -141,7 +143,7 @@ void main() {
       expect(find.text('Edit camera'), findsOneWidget);
       expect(find.text('Connected'), findsOneWidget);
       expect(tested.single.transport, ViscaTransport.raw);
-      expect(tested.single.id, 'a');
+      expect(tested.single.id, 1);
       await tester.pump();
       expect(tested, hasLength(1));
       for (final label in ['Camera port', 'Local port']) {
@@ -170,7 +172,7 @@ void main() {
       await openEditor(
         tester,
         camera: const Camera(
-          id: 'a',
+          id: 1,
           name: 'Stage',
           host: '192.168.1.10',
           port: 1259,
@@ -287,7 +289,7 @@ void main() {
     await openEditor(
       tester,
       camera: const Camera(
-        id: 'a',
+        id: 1,
         name: 'Stage',
         host: '192.168.1.10',
         port: 1259,

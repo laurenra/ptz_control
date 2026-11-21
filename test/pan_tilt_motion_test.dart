@@ -100,7 +100,7 @@ void main() {
       }
     });
     camera = Camera(
-      id: 'a',
+      id: 1,
       name: 'Stage',
       host: '127.0.0.1',
       port: server.port,
@@ -271,7 +271,7 @@ void main() {
     'without saved limits unchanged position stops continuous movement',
     () async {
       final noLimits = Camera(
-        id: 'a',
+        id: 1,
         name: camera.name,
         host: camera.host,
         port: camera.port,
@@ -309,12 +309,7 @@ void main() {
           await c.setPaused(true);
         case 'switch':
           await c.select(
-            Camera(
-              id: 'b',
-              name: 'Other',
-              host: camera.host,
-              port: camera.port,
-            ),
+            Camera(id: 2, name: 'Other', host: camera.host, port: camera.port),
           );
         case 'dispose':
           c.dispose();

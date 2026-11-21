@@ -171,7 +171,7 @@ void main() {
       }
     });
     camera = Camera(
-      id: 'a',
+      id: 1,
       name: 'Stage',
       host: '127.0.0.1',
       port: server.port,

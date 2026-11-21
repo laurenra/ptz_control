@@ -21,7 +21,7 @@ class _UiController extends PtzController {
   @override
   Future<void> initialize() async {
     cameras = [
-      const Camera(id: 'test', name: 'Stage', host: '192.0.2.1', port: 1259),
+      const Camera(id: 1, name: 'Stage', host: '192.0.2.1', port: 1259),
     ];
     selected = cameras.first;
     loading = false;
@@ -595,7 +595,11 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('preset-9')));
       expect(c.recalled, [9]);
       final selector = tester.getRect(
-        find.byType(DropdownButtonFormField<String>),
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<int> &&
+              widget.decoration.labelText == 'Selected camera',
+        ),
       );
       final refresh = tester.getRect(find.byTooltip('Refresh camera status'));
       expect(refresh.left, greaterThan(selector.right));

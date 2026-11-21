@@ -11,12 +11,14 @@ class CameraEditor extends StatefulWidget {
   const CameraEditor({
     super.key,
     this.camera,
+    required this.newCameraId,
     required this.onSave,
     required this.onTest,
     required this.onTestLimits,
     required this.onStopLimits,
   });
   final Camera? camera;
+  final int newCameraId;
   final Future<bool> Function(Camera) onSave;
   final Future<bool> Function(Camera) onTest;
   final Future<CameraLimits> Function(Camera) onTestLimits;
@@ -28,8 +30,7 @@ class CameraEditor extends StatefulWidget {
 
 class _CameraEditorState extends State<CameraEditor> {
   final _form = GlobalKey<FormState>();
-  late final _cameraId =
-      widget.camera?.id ?? DateTime.now().microsecondsSinceEpoch.toString();
+  late final _cameraId = widget.camera?.id ?? widget.newCameraId;
   late CameraLimits? _limits = widget.camera?.limits;
   final _hostKey = GlobalKey<FormFieldState<String>>();
   final _portKey = GlobalKey<FormFieldState<String>>();

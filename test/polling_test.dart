@@ -65,12 +65,7 @@ void main() {
         }
       }
     });
-    camera = Camera(
-      id: 'a',
-      name: 'Stage',
-      host: '127.0.0.1',
-      port: server.port,
-    );
+    camera = Camera(id: 1, name: 'Stage', host: '127.0.0.1', port: server.port);
     c = PtzController(store: MemoryStore([camera]));
     await c.initialize();
   });
@@ -110,7 +105,7 @@ void main() {
     'resume refreshes the selected camera after external settings change',
     () async {
       final other = Camera(
-        id: 'b',
+        id: 2,
         name: 'Other',
         host: camera.host,
         port: camera.port,
@@ -158,7 +153,7 @@ void main() {
         if (register == 0x38) modesBeforeReply.add(c.autofocus);
       };
       final manualCamera = Camera(
-        id: 'b',
+        id: 2,
         name: 'Manual camera',
         host: camera.host,
         port: camera.port,
@@ -193,7 +188,7 @@ void main() {
     expect(inquiries(), allRegisters);
     received.clear();
     await c.select(
-      Camera(id: 'b', name: 'Other', host: camera.host, port: camera.port),
+      Camera(id: 2, name: 'Other', host: camera.host, port: camera.port),
     );
     expect(inquiries(), allRegisters);
   });

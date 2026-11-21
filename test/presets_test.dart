@@ -98,7 +98,7 @@ void main() {
       }
     });
     store = _FailingStore([
-      Camera(id: 'a', name: 'Stage', host: '127.0.0.1', port: server.port),
+      Camera(id: 1, name: 'Stage', host: '127.0.0.1', port: server.port),
     ], () => failStorage);
     c = PtzController(store: store);
     await c.initialize();

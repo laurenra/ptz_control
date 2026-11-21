@@ -17,7 +17,7 @@ class Camera {
     this.limits,
   });
 
-  final String id;
+  final int id;
   final String name;
   final String host;
   final int port;
@@ -78,7 +78,7 @@ class Camera {
 
   factory Camera.fromJson(Map<String, dynamic> json) {
     final camera = Camera(
-      id: json['id'] as String,
+      id: json['id'] as int,
       name: json['name'] as String,
       host: json['host'] as String,
       port: json['port'] as int,
@@ -93,7 +93,8 @@ class Camera {
         ),
       ),
     );
-    if (camera.id.isEmpty ||
+    if (camera.id < 1 ||
+        camera.id > 255 ||
         camera.name.trim().isEmpty ||
         validateHost(camera.host) != null ||
         camera.port < 1 ||

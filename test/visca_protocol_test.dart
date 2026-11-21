@@ -73,7 +73,7 @@ void main() {
       expect(Camera.validateHost(value), isNotNull);
     }
     const camera = Camera(
-      id: '1',
+      id: 1,
       name: 'Stage',
       host: '192.168.1.10',
       port: 52381,

@@ -94,6 +94,19 @@ class PtzController extends ChangeNotifier {
   Timer? _watchdog;
 
   bool get canControl => _client != null && !switching && !_paused;
+  int get nextCameraId {
+    final used = cameras.map((camera) => camera.id).toSet();
+    // Continue the saved sequence across removals and restarts. Once 255 has
+    // been assigned, reuse vacant IDs without changing any existing camera.
+    for (var id = _store.nextId; id <= 255; id++) {
+      if (!used.contains(id)) return id;
+    }
+    return Iterable<int>.generate(
+      255,
+      (index) => index + 1,
+    ).firstWhere((id) => !used.contains(id));
+  }
+
   bool get canOperate => canControl && !presetBusy;
   bool get moving => _motionClient != null;
   bool motionOwnedBy(Object owner) => moving && _motionOwner == owner;
@@ -994,6 +1007,28 @@ class PtzController extends ChangeNotifier {
       cameras.where((c) => c.id != camera.id).toList(),
       removed: camera,
     );
+  }
+
+  Future<bool> reorderCamera(int oldIndex, int newIndex) async {
+    if (saving ||
+        switching ||
+        presetBusy ||
+        _testingConnection ||
+        !_storageHealthy ||
+        _disposed) {
+      return false;
+    }
+    if (oldIndex < 0 ||
+        oldIndex >= cameras.length ||
+        newIndex < 0 ||
+        newIndex >= cameras.length) {
+      return false;
+    }
+    if (newIndex == oldIndex) return true;
+    final updated = List<Camera>.of(cameras);
+    updated.insert(newIndex, updated.removeAt(oldIndex));
+    // Order is independent of identity; keep the selected camera and socket.
+    return _persist(updated);
   }
 
   Future<bool> _persist(

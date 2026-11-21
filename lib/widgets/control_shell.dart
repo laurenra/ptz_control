@@ -72,6 +72,7 @@ class _ControlShellState extends State<ControlShell>
       barrierDismissible: false,
       builder: (_) => CameraEditor(
         camera: camera,
+        newCameraId: c.nextCameraId,
         onSave: c.saveCamera,
         onTest: c.testCameraConnection,
         onTestLimits: c.testAndSaveCameraLimits,
@@ -206,6 +207,8 @@ class _ControlShellState extends State<ControlShell>
                         Expanded(
                           child: c.loading
                               ? const Center(child: CircularProgressIndicator())
+                              : _tab == 2
+                              ? _cameras()
                               : SingleChildScrollView(
                                   key: ValueKey('$_tab-${c.selected?.id}'),
                                   padding: const EdgeInsets.fromLTRB(
@@ -321,7 +324,7 @@ class _ControlShellState extends State<ControlShell>
     child: child,
   );
 
-  Widget _selector() => DropdownButtonFormField<String>(
+  Widget _selector() => DropdownButtonFormField<int>(
     key: ValueKey('${c.selected?.id}-${c.selected?.name}'),
     initialValue: c.selected?.id,
     isExpanded: true,
@@ -1233,119 +1236,163 @@ class _ControlShellState extends State<ControlShell>
     ),
   );
 
-  Widget _cameras() => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      _title(
-        'Network setup',
-        'Your cameras',
-        Text('${c.cameras.length} / 8', style: const TextStyle(color: _muted)),
-      ),
-      const Text(
-        'Save up to eight cameras. Select a camera on the Control tab to route commands to it.',
-        style: TextStyle(color: _muted, fontSize: 12, height: 1.5),
-      ),
-      const SizedBox(height: 16),
-      if (c.cameras.isEmpty) _card(_empty()),
-      ...c.cameras.indexed.map((entry) {
-        final camera = entry.$2;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: _card(
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: const Color(0xff25483f),
-                        borderRadius: BorderRadius.circular(8),
+  Widget _cameras() => ReorderableListView(
+    key: const ValueKey('camera-list'),
+    padding: const EdgeInsets.all(16),
+    buildDefaultDragHandles: false,
+    onReorderItem: (oldIndex, newIndex) =>
+        unawaited(c.reorderCamera(oldIndex, newIndex)),
+    header: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _title(
+          'Network setup',
+          'Your cameras',
+          Text(
+            '${c.cameras.length} / 8',
+            style: const TextStyle(color: _muted),
+          ),
+        ),
+        const Text(
+          'Drag the handles to reorder cameras. This order is also used in the Selected camera list.',
+          style: TextStyle(color: _muted, fontSize: 12, height: 1.5),
+        ),
+        const SizedBox(height: 16),
+        if (c.cameras.isEmpty) _card(_empty()),
+      ],
+    ),
+    footer: c.cameras.isNotEmpty
+        ? SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: c.cameras.length >= 8 || c.saving || c.switching
+                  ? null
+                  : () => _edit(),
+              icon: const Icon(Icons.add),
+              label: Text(
+                c.cameras.length >= 8
+                    ? 'All 8 camera slots are in use'
+                    : 'Add camera',
+              ),
+            ),
+          )
+        : null,
+    children: c.cameras.indexed.map((entry) {
+      final camera = entry.$2;
+      return Padding(
+        key: ValueKey(camera.id),
+        padding: const EdgeInsets.only(bottom: 10),
+        child: _card(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xff25483f),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${camera.id}'.padLeft(2, '0'),
+                      style: const TextStyle(
+                        color: _accent,
+                        fontFamily: 'monospace',
                       ),
-                      child: Text(
-                        '${entry.$1 + 1}'.padLeft(2, '0'),
-                        style: const TextStyle(
-                          color: _accent,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        camera.name,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      camera.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    IconButton(
-                      tooltip: 'Edit ${camera.name}',
-                      onPressed: c.saving || c.switching
-                          ? null
-                          : () => _edit(camera),
-                      icon: const Icon(Icons.edit_outlined, size: 19),
-                    ),
-                    IconButton(
-                      tooltip: 'Delete ${camera.name}',
-                      onPressed: c.saving || c.switching
-                          ? null
-                          : () => _delete(camera),
-                      icon: const Icon(Icons.delete_outline, size: 19),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 6,
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          camera.endpoint,
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 13,
+                  ),
+                  ReorderableDragStartListener(
+                    index: entry.$1,
+                    enabled: !c.saving && !c.switching,
+                    child: Semantics(
+                      label: 'Reorder ${camera.name}',
+                      onIncrease:
+                          entry.$1 < c.cameras.length - 1 &&
+                              !c.saving &&
+                              !c.switching
+                          ? () => unawaited(
+                              c.reorderCamera(entry.$1, entry.$1 + 1),
+                            )
+                          : null,
+                      onDecrease: entry.$1 > 0 && !c.saving && !c.switching
+                          ? () => unawaited(
+                              c.reorderCamera(entry.$1, entry.$1 - 1),
+                            )
+                          : null,
+                      child: Tooltip(
+                        message: 'Drag to reorder ${camera.name}',
+                        child: const SizedBox(
+                          width: 32,
+                          height: 48,
+                          child: Icon(
+                            Icons.drag_handle,
+                            color: _muted,
+                            size: 20,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 7,
+                  ),
+                  IconButton(
+                    tooltip: 'Edit ${camera.name}',
+                    onPressed: c.saving || c.switching
+                        ? null
+                        : () => _edit(camera),
+                    icon: const Icon(Icons.edit_outlined, size: 19),
+                  ),
+                  IconButton(
+                    tooltip: 'Delete ${camera.name}',
+                    onPressed: c.saving || c.switching
+                        ? null
+                        : () => _delete(camera),
+                    icon: const Icon(Icons.delete_outline, size: 19),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 6,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
                       child: Text(
-                        '${camera.protocolLabel} · local ${camera.localPort == 0 ? 'auto' : camera.localPort}',
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(color: _muted, fontSize: 11),
+                        camera.endpoint,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 13,
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      }),
-      if (c.cameras.isNotEmpty)
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: c.cameras.length >= 8 || c.saving || c.switching
-                ? null
-                : () => _edit(),
-            icon: const Icon(Icons.add),
-            label: Text(
-              c.cameras.length >= 8
-                  ? 'All 8 camera slots are in use'
-                  : 'Add camera',
-            ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 7,
+                    child: Text(
+                      '${camera.protocolLabel} · local ${camera.localPort == 0 ? 'auto' : camera.localPort}',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(color: _muted, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-    ],
+      );
+    }).toList(),
   );
 
   Future<void> _delete(Camera camera) async {

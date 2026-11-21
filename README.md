@@ -148,9 +148,13 @@ The computer or phone must be able to reach the camera's network. Enable VISCA U
 
 ## App preferences and camera settings storage
 
-Camera configurations are saved locally for the current OS user through Flutter's [`shared_preferences`](https://pub.dev/packages/shared_preferences/versions/2.5.6) plugin. The app saves all cameras together as one JSON array under the Dart key `ptz.cameras.v1`; the stored preference key includes Flutter's default prefix: **`flutter.ptz.cameras.v1`**.
+Camera configurations are saved locally for the current OS user through Flutter's [`shared_preferences`](https://pub.dev/packages/shared_preferences/versions/2.5.6) plugin. The app saves all cameras together as one JSON object containing the ordered `cameras` array and a `nextId` counter under the Dart key `ptz.cameras.v2`; the stored preference key includes Flutter's default prefix: **`flutter.ptz.cameras.v2`**.
 
-Each camera entry contains its ID, name (`name`), IP address (`host`), destination port (`port`), packet format (`transport`), local UDP port (`localPort`), and locally saved preset names and snapshots (`presets`). Measured travel limits, when saved, are nested under `limits`: `panMin`, `panMax`, `tiltMin`, `tiltMax`, `zoomMin`, and `zoomMax`, in camera-native position units. The save/load code is in [`lib/services/camera_store.dart`](lib/services/camera_store.dart).
+Each camera entry contains its integer ID (1–255), name (`name`), IP address (`host`), destination port (`port`), packet format (`transport`), local UDP port (`localPort`), and locally saved preset names and snapshots (`presets`). Measured travel limits, when saved, are nested under `limits`: `panMin`, `panMax`, `tiltMin`, `tiltMax`, `zoomMin`, and `zoomMax`, in camera-native position units. The save/load code is in [`lib/services/camera_store.dart`](lib/services/camera_store.dart).
+
+New cameras receive sequential IDs beginning at 1. The counter survives deletion and restarts; after assigning 255, vacant IDs can be reused. Editing or reordering cameras never changes their IDs. Drag the handles on **Your cameras** to change the saved order used by every **Selected camera** dropdown. Reordering preserves the currently selected camera and its connection. The eight-camera limit still applies.
+
+On first load, the app migrates the original `ptz.cameras.v1` camera array to the new format, assigning IDs in its existing order while preserving every camera’s network settings, limits, and presets. The original preference remains as a backup.
 
 Interface options such as navigation placement, movement mode, speed selections, and debug-console visibility currently reset on launch; they are not saved as preferences. Camera configurations and local preset metadata survive app restarts. Copying the app to another device does not transfer these settings, and presets stored in the camera remain in the camera.
 
@@ -164,10 +168,10 @@ The app uses `UserDefaults` in its sandbox. Preferences are stored at:
 ~/Library/Containers/com.ptz.ptzControl/Data/Library/Preferences/com.ptz.ptzControl.plist
 ```
 
-Here, `~` is your home folder. In Finder, choose **Go → Go to Folder** and enter the containing folder. The camera JSON is the string value of `flutter.ptz.cameras.v1` in the property list. To view it in Terminal:
+Here, `~` is your home folder. In Finder, choose **Go → Go to Folder** and enter the containing folder. The camera JSON is the string value of `flutter.ptz.cameras.v2` in the property list. To view it in Terminal:
 
 ```sh
-plutil -extract 'flutter\.ptz\.cameras\.v1' raw \
+plutil -extract 'flutter\.ptz\.cameras\.v2' raw \
   ~/Library/Containers/com.ptz.ptzControl/Data/Library/Preferences/com.ptz.ptzControl.plist \
   | python3 -m json.tool
 ```
@@ -180,7 +184,7 @@ Preferences are stored in a JSON file under the current user's roaming AppData f
 %APPDATA%\com.ptz\ptz_control\shared_preferences.json
 ```
 
-Paste `%APPDATA%\com.ptz\ptz_control` into File Explorer's address bar to open the folder. The `com.ptz` and `ptz_control` directories come from the executable's `CompanyName` and `ProductName` in `windows/runner/Runner.rc`. Inside the preferences file, `flutter.ptz.cameras.v1` holds the camera array as a JSON-encoded string.
+Paste `%APPDATA%\com.ptz\ptz_control` into File Explorer's address bar to open the folder. The `com.ptz` and `ptz_control` directories come from the executable's `CompanyName` and `ProductName` in `windows/runner/Runner.rc`. Inside the preferences file, `flutter.ptz.cameras.v2` holds the camera setup as a JSON-encoded string.
 
 ### iOS
 
@@ -190,7 +194,7 @@ The app uses `UserDefaults` inside its private app data container:
 <app-data-container>/Library/Preferences/com.ptz.ptzControl.plist
 ```
 
-On a device, the data container is typically `/var/mobile/Containers/Data/Application/<UUID>`; the UUID is assigned by iOS and can change. The camera JSON is stored under `flutter.ptz.cameras.v1`. This private directory is not exposed in the Files app. For a development build, inspect the app's data container through Xcode's **Devices and Simulators** window. Simulator installations have their own separate data containers.
+On a device, the data container is typically `/var/mobile/Containers/Data/Application/<UUID>`; the UUID is assigned by iOS and can change. The camera JSON is stored under `flutter.ptz.cameras.v2`. This private directory is not exposed in the Files app. For a development build, inspect the app's data container through Xcode's **Devices and Simulators** window. Simulator installations have their own separate data containers.
 
 ### Android
 
@@ -200,7 +204,7 @@ The app uses Android `SharedPreferences`, stored in its private app data directo
 /data/user/0/com.ptz.ptz_control/shared_prefs/FlutterSharedPreferences.xml
 ```
 
-This is the usual path for the primary Android user; other users or work profiles have a different user number. `/data/data/com.ptz.ptz_control/shared_prefs/FlutterSharedPreferences.xml` is a common equivalent path for the primary user. The XML string entry named `flutter.ptz.cameras.v1` contains the camera JSON. The file is private to the app; inspect a debuggable installation with Android Studio's **Device Explorer** or `adb shell run-as com.ptz.ptz_control`. The current app uses the legacy `SharedPreferences` API, so these settings are in this XML file rather than Android DataStore.
+This is the usual path for the primary Android user; other users or work profiles have a different user number. `/data/data/com.ptz.ptz_control/shared_prefs/FlutterSharedPreferences.xml` is a common equivalent path for the primary user. The XML string entry named `flutter.ptz.cameras.v2` contains the camera JSON. The file is private to the app; inspect a debuggable installation with Android Studio's **Device Explorer** or `adb shell run-as com.ptz.ptz_control`. The current app uses the legacy `SharedPreferences` API, so these settings are in this XML file rather than Android DataStore.
 
 ### Linux
 
@@ -210,7 +214,7 @@ Preferences are stored under `$XDG_DATA_HOME`, which defaults to `~/.local/share
 ~/.local/share/com.ptz.ptz_control/shared_preferences.json
 ```
 
-If `XDG_DATA_HOME` is set, replace `~/.local/share` with that directory. The current path provider uses the application ID `com.ptz.ptz_control`; for compatibility, it can reuse an existing older directory named after the executable, `~/.local/share/ptz_control/`, when the application-ID directory does not yet exist. Inside `shared_preferences.json`, `flutter.ptz.cameras.v1` holds the camera array as a JSON-encoded string.
+If `XDG_DATA_HOME` is set, replace `~/.local/share` with that directory. The current path provider uses the application ID `com.ptz.ptz_control`; for compatibility, it can reuse an existing older directory named after the executable, `~/.local/share/ptz_control/`, when the application-ID directory does not yet exist. Inside `shared_preferences.json`, `flutter.ptz.cameras.v2` holds the camera setup as a JSON-encoded string.
 
 ## Controls
 

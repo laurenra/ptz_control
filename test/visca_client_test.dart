@@ -10,13 +10,22 @@ import 'package:ptz_control/services/visca_client.dart';
 import 'package:ptz_control/services/visca_protocol.dart';
 
 class MemoryStore implements CameraStore {
-  MemoryStore(this.cameras);
+  MemoryStore(this.cameras) {
+    for (final camera in cameras) {
+      if (camera.id >= nextId) nextId = camera.id + 1;
+    }
+  }
   List<Camera> cameras;
+  @override
+  int nextId = 1;
   @override
   Future<List<Camera>> load() async => cameras;
   @override
   Future<void> save(List<Camera> value) async {
     cameras = value;
+    for (final camera in cameras) {
+      if (camera.id >= nextId) nextId = camera.id + 1;
+    }
   }
 }
 
@@ -29,7 +38,7 @@ void main() {
   setUp(() async {
     server = await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0);
     camera = Camera(
-      id: '1',
+      id: 1,
       name: 'Local test',
       host: '127.0.0.1',
       port: server.port,
@@ -139,7 +148,7 @@ void main() {
 
   test('Sony ignores wrong sequence before accepting matching reply', () async {
     camera = Camera(
-      id: '1',
+      id: 1,
       name: 'Sony test',
       host: camera.host,
       port: camera.port,
@@ -380,14 +389,21 @@ void main() {
       false,
     );
     final other = Camera(
-      id: '2',
+      id: 2,
       name: 'Second',
       host: camera.host,
       port: camera.port,
     );
     expect(await controller.saveCamera(other), true);
-    expect(controller.selected?.id, '2');
+    expect(controller.selected?.id, 2);
     expect(store.cameras.length, 2);
     expect(received, contains(equals(Visca.drive(8, 6, 3, 3))));
+    final selected = controller.selected;
+    received.clear();
+    expect(await controller.reorderCamera(1, 0), true);
+    expect(controller.cameras.map((camera) => camera.id), [2, 1]);
+    expect(controller.selected, same(selected));
+    expect(controller.connection, CameraConnection.connected);
+    expect(received, isEmpty);
   });
 }

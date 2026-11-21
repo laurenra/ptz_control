@@ -28,7 +28,7 @@ void main() {
     replyPort = null;
     received = [];
     server = await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0);
-    camera = Camera(id: 'test', name: '', host: '127.0.0.1', port: server.port);
+    camera = Camera(id: 1, name: '', host: '127.0.0.1', port: server.port);
     subscription = server.listen((event) {
       if (event != RawSocketEvent.read) return;
       Datagram? packet;
@@ -114,7 +114,7 @@ void main() {
     final localPort = available.port;
     available.close();
     camera = Camera(
-      id: 'test',
+      id: 1,
       name: '',
       host: camera.host,
       port: camera.port,
@@ -156,7 +156,7 @@ void main() {
     final occupied = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
     addTearDown(occupied.close);
     camera = Camera(
-      id: 'test',
+      id: 1,
       name: '',
       host: camera.host,
       port: camera.port,
@@ -180,7 +180,7 @@ void main() {
       replyPort = localPort;
       expect(await controller.testCameraConnection(camera), false);
       camera = Camera(
-        id: 'first',
+        id: 1,
         name: 'First',
         host: camera.host,
         port: camera.port,
@@ -214,7 +214,7 @@ void main() {
         otherServer.close();
       });
       final other = Camera(
-        id: 'second',
+        id: 2,
         name: 'Second',
         host: camera.host,
         port: otherServer.port,
@@ -249,7 +249,7 @@ void main() {
       final localPort = available.port;
       available.close();
       camera = Camera(
-        id: 'test',
+        id: 1,
         name: 'Stage',
         host: camera.host,
         port: camera.port,
@@ -274,7 +274,7 @@ void main() {
     final localPort = available.port;
     available.close();
     camera = Camera(
-      id: 'test',
+      id: 1,
       name: 'Stage',
       host: camera.host,
       port: camera.port,
