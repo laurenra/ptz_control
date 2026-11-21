@@ -1523,8 +1523,14 @@ class _ControlShellState extends State<ControlShell>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Replace your ${c.cameras.length} saved cameras with these '
-                  '${settings.cameras.length} cameras? IDs, order, network settings, '
+                  c.cameras.isEmpty
+                      ? 'Add these ${settings.cameras.length} cameras?'
+                      : 'Replace your ${c.cameras.length} saved cameras with these '
+                            '${settings.cameras.length} cameras?',
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'IDs, order, network settings, '
                   'camera info (manufacturer, model, serial number, and MAC address), '
                   'limits, and presets will be restored from the file.',
                 ),
@@ -1546,7 +1552,9 @@ class _ControlShellState extends State<ControlShell>
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('Replace cameras'),
+              child: Text(
+                c.cameras.isEmpty ? 'Add cameras' : 'Replace cameras',
+              ),
             ),
           ],
         ),
