@@ -130,8 +130,8 @@ void main() {
       final c = await openCameras(tester);
       await c.saveCamera(settingsCameras.last.withInfo(settingsCameraInfo));
       await tester.pumpAndSettle();
-      final export = find.widgetWithText(OutlinedButton, 'Export settings');
-      final import = find.widgetWithText(OutlinedButton, 'Import settings');
+      final export = find.widgetWithText(OutlinedButton, 'Export');
+      final import = find.widgetWithText(OutlinedButton, 'Import');
       await tester.tap(export);
       await tester.pumpAndSettle();
       expect(tester.widget<OutlinedButton>(export).onPressed, isNull);
@@ -176,7 +176,7 @@ void main() {
     'import validates, previews and requires confirmation before replacing',
     (tester) async {
       final c = await openCameras(tester);
-      final import = find.widgetWithText(OutlinedButton, 'Import settings');
+      final import = find.widgetWithText(OutlinedButton, 'Import');
       await tester.tap(import);
       await tester.pumpAndSettle();
       picker.pickResponse.complete(null);

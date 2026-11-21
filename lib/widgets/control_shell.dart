@@ -7,8 +7,10 @@ import '../controller.dart';
 import '../models/camera.dart';
 import '../services/debug_log_export.dart';
 import '../services/camera_settings_transfer.dart';
+import '../services/onvif_discovery.dart';
 import '../services/visca_protocol.dart';
 import 'camera_editor.dart';
+import 'camera_discovery_dialog.dart';
 import 'connection_status.dart';
 import 'hold_button.dart';
 import 'focus_depth_icon.dart';
@@ -18,8 +20,13 @@ const _accent = Color(0xff62dfc4);
 const _muted = Color(0xff9aadb6);
 
 class ControlShell extends StatefulWidget {
-  const ControlShell({super.key, this.controller});
+  const ControlShell({
+    super.key,
+    this.controller,
+    this.discoveryService = const OnvifDiscoveryService(),
+  });
   final PtzController? controller;
+  final OnvifDiscoveryService discoveryService;
 
   @override
   State<ControlShell> createState() => _ControlShellState();
@@ -31,6 +38,7 @@ class _ControlShellState extends State<ControlShell>
   int _tab = 0;
   bool _savingDebugLog = false;
   bool _transferringCameraSettings = false;
+  bool _findingCameras = false;
 
   @override
   void initState() {
@@ -1256,27 +1264,49 @@ class _ControlShellState extends State<ControlShell>
             style: const TextStyle(color: _muted),
           ),
         ),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        Row(
           children: [
-            OutlinedButton.icon(
-              onPressed:
-                  !_transferringCameraSettings &&
-                      c.canTransferCameraSettings &&
-                      c.cameras.isNotEmpty
-                  ? _exportCameraSettings
-                  : null,
-              icon: const Icon(Icons.file_download_outlined, size: 18),
-              label: const Text('Export settings'),
+            Expanded(
+              flex: 3,
+              child: OutlinedButton(
+                style: _cameraActionStyle,
+                onPressed:
+                    !_findingCameras &&
+                        !_transferringCameraSettings &&
+                        c.canTransferCameraSettings
+                    ? _findCameras
+                    : null,
+                child: const Text('Find cameras'),
+              ),
             ),
-            OutlinedButton.icon(
-              onPressed:
-                  !_transferringCameraSettings && c.canTransferCameraSettings
-                  ? _importCameraSettings
-                  : null,
-              icon: const Icon(Icons.file_upload_outlined, size: 18),
-              label: const Text('Import settings'),
+            const SizedBox(width: 6),
+            Expanded(
+              flex: 2,
+              child: OutlinedButton(
+                style: _cameraActionStyle,
+                onPressed:
+                    !_findingCameras &&
+                        !_transferringCameraSettings &&
+                        c.canTransferCameraSettings &&
+                        c.cameras.isNotEmpty
+                    ? _exportCameraSettings
+                    : null,
+                child: const Text('Export'),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              flex: 2,
+              child: OutlinedButton(
+                style: _cameraActionStyle,
+                onPressed:
+                    !_findingCameras &&
+                        !_transferringCameraSettings &&
+                        c.canTransferCameraSettings
+                    ? _importCameraSettings
+                    : null,
+                child: const Text('Import'),
+              ),
             ),
           ],
         ),
@@ -1422,6 +1452,33 @@ class _ControlShellState extends State<ControlShell>
       );
     }).toList(),
   );
+
+  ButtonStyle get _cameraActionStyle => OutlinedButton.styleFrom(
+    padding: const EdgeInsets.symmetric(horizontal: 6),
+    minimumSize: const Size(0, 40),
+    textStyle: const TextStyle(fontSize: 12),
+  );
+
+  Future<void> _findCameras() async {
+    if (_findingCameras ||
+        _transferringCameraSettings ||
+        !c.canTransferCameraSettings) {
+      return;
+    }
+    setState(() => _findingCameras = true);
+    try {
+      await c.endMotion();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) =>
+            CameraDiscoveryDialog(discovery: widget.discoveryService),
+      );
+    } finally {
+      if (mounted) setState(() => _findingCameras = false);
+    }
+  }
 
   void _transferMessage(String message) {
     ScaffoldMessenger.of(context)

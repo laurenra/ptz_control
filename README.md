@@ -149,13 +149,21 @@ The computer or phone must be able to reach the camera's network. Enable VISCA U
 
 The identity lookup uses read-only [ONVIF device operations](https://www.onvif.org/yaml/wsdl-viewer2.php) (`GetDeviceInformation` and `GetNetworkInterfaces`) at `/onvif/device_service`, with a fallback to the [PTZOptics HTTP API](https://docs.ptzoptics.com/resources/http-api/query/get-device-config/). This uses the camera’s web port (default 80), separately from the UDP camera and local ports, and leaves the active UDP connection in place. Some cameras require ONVIF to be enabled or a camera login; support and returned fields vary by model. Unavailable fields show **Not reported** after a successful partial lookup. A failed lookup keeps existing details. Partial results from the same IP preserve previously retrieved fields; a successful lookup at a different IP replaces the cached identity, and the last queried IP is displayed beneath the details. Normal platform network and certificate policies apply; use HTTPS where required.
 
+## Find cameras
+
+On **Cameras** → **Your cameras**, the action row contains **Find cameras**, **Export**, and **Import**, in that order. **Find cameras** sends a WS-Discovery multicast probe to `239.255.255.250` on UDP port `3702` through each active IPv4 interface, with two retries. It collects replies for five seconds and displays each responding ONVIF device's **EndpointReference (address)**, **Types**, **Scopes**, and **XAddrs** as advertised. Results appear as they arrive, combine repeated replies by endpoint reference, and remain open after the search finishes. **Cancel** stops any pending probes, releases discovery sockets, and closes the display. Discovery uses separate ephemeral local ports from VISCA camera control and does not add or modify saved cameras.
+
+Only devices that respond to multicast discovery can appear; cameras must have discovery enabled and be on a network that allows multicast traffic. See [ONVIF Core, section 7](https://www.onvif.org/specs/core/ONVIF-Core-Specification.pdf) for device discovery behavior. The saved-camera limit does not limit the number of discovery results.
+
+On iOS/iPadOS, multicast additionally requires signing with Apple's `com.apple.developer.networking.multicast` entitlement, which the current iOS runner does not include. Configure an approved provisioning profile before using discovery on physical iOS devices; see [Apple's local network and multicast requirements](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy).
+
 ## Export and import camera settings
 
-On **Cameras** → **Your cameras**, choose **Export settings** and select a location for the `.json` file. Exports contain every saved camera in display order, including IDs, names, IPv4 addresses, UDP packet formats, camera and local ports, measured pan/tilt/zoom limits, retrieved device identity, and local preset names and snapshots. The next-ID counter is included so its sequence continues when the file is restored.
+On **Cameras** → **Your cameras**, choose **Export** and select a location for the `.json` file. Exports contain every saved camera in display order, including IDs, names, IPv4 addresses, UDP packet formats, camera and local ports, measured pan/tilt/zoom limits, retrieved device identity, and local preset names and snapshots. The next-ID counter is included so its sequence continues when the file is restored.
 
 Each exported camera includes an `info` object with `manufacturer`, `model`, `serialNumber`, and `macAddress`; details not yet retrieved or not reported by the camera are `null`. When available, `sourceHost` records the IP queried. Use **Get camera info** in the editor and **Save camera** before exporting to include newly retrieved details. Export uses saved settings and does not query cameras again.
 
-Choose **Import settings**, select an exported JSON file, and review the listed cameras. **Replace cameras** replaces the entire saved camera list with the file’s contents; **Cancel** keeps the current setup. Import preserves a selection when the same ID and camera endpoint are present; otherwise it selects the first imported camera. A camera may remain offline if its network is unavailable on the receiving device.
+Choose **Import**, select an exported JSON file, and review the listed cameras. **Replace cameras** replaces the entire saved camera list with the file’s contents; **Cancel** keeps the current setup. Import preserves a selection when the same ID and camera endpoint are present; otherwise it selects the first imported camera. A camera may remain offline if its network is unavailable on the receiving device.
 
 Import restores all available camera info and displays it when reopening **Edit camera**, even if the camera is offline. Partial information and older files without an `info` object are supported.
 
@@ -171,7 +179,7 @@ New cameras receive sequential IDs beginning at 1. The counter survives deletion
 
 On first load, the app migrates the original `ptz.cameras.v1` camera array to the new format, assigning IDs in its existing order while preserving every camera’s network settings, limits, and presets. The original preference remains as a backup.
 
-Interface options such as navigation placement, movement mode, speed selections, and debug-console visibility currently reset on launch; they are not saved as preferences. Camera configurations and local preset metadata survive app restarts. Use **Export settings** and **Import settings** to transfer camera configurations between devices. Presets stored in the camera remain in the camera.
+Interface options such as navigation placement, movement mode, speed selections, and debug-console visibility currently reset on launch; they are not saved as preferences. Camera configurations and local preset metadata survive app restarts. Use **Export** and **Import** to transfer camera configurations between devices. Presets stored in the camera remain in the camera.
 
 The locations below reflect the current application identifiers and dependency versions. Files are created when settings are first saved; changing an application identifier or Windows company/product metadata can change the location.
 
