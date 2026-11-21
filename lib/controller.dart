@@ -146,7 +146,7 @@ class PtzController extends ChangeNotifier {
     _notify();
     await endMotion();
     _cancelPreset();
-    _client?.close();
+    await _client?.close();
     _client = null;
     await _queryFuture;
     selected = camera;
@@ -189,7 +189,7 @@ class PtzController extends ChangeNotifier {
     try {
       await client.open();
       if (_disposed || _paused || _client != client) {
-        client.close();
+        await client.close();
         return;
       }
       _openedAt = DateTime.now();
@@ -198,7 +198,7 @@ class PtzController extends ChangeNotifier {
         (_) => unawaited(_query([0x12, 0x47], scheduled: true)),
       );
     } catch (error) {
-      client.close();
+      await client.close();
       _client = null;
       connection = CameraConnection.offline;
       message = 'Could not open UDP socket: $error';
@@ -264,7 +264,7 @@ class PtzController extends ChangeNotifier {
           switching = true;
           _pollTimer?.cancel();
           _client = null;
-          active.close();
+          await active.close();
           _notify();
           await _queryFuture;
         }
@@ -297,7 +297,7 @@ class PtzController extends ChangeNotifier {
     } catch (_) {
       return false;
     } finally {
-      temporary?.close();
+      await temporary?.close();
       _testClient = null;
       if (suspended && !_disposed) {
         switching = false;
@@ -337,7 +337,7 @@ class PtzController extends ChangeNotifier {
     ViscaClient? client;
     try {
       await endMotion();
-      _client?.close();
+      await _client?.close();
       _client = null;
       await _queryFuture;
       if (_disposed || _paused || _limitCancelled) {
@@ -381,7 +381,7 @@ class PtzController extends ChangeNotifier {
       // Keep the socket alive until the final stop requests have finished.
       await _limitTester?.cancel();
       _limitTester = null;
-      client?.close();
+      await client?.close();
       switching = false;
       _testingConnection = false;
       _testingLimits = false;
@@ -1011,7 +1011,7 @@ class PtzController extends ChangeNotifier {
       if (removed?.id == selected?.id && removed != null) {
         await endMotion();
         _pollTimer?.cancel();
-        _client?.close();
+        await _client?.close();
         _client = null;
         selected = null;
         pan = tilt = zoom = null;
@@ -1070,7 +1070,7 @@ class PtzController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     unawaited(cancelLimitTest());
-    _testClient?.close();
+    unawaited(_testClient?.close());
     _pollTimer?.cancel();
     _watchdog?.cancel();
     final client = _client;

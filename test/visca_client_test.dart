@@ -53,6 +53,63 @@ void main() {
   }
 
   test(
+    'close releases the fixed port before another client opens it',
+    () async {
+      final available = await RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        0,
+      );
+      final localPort = available.port;
+      await available.listen((_) {}).cancel();
+      final fixedCamera = Camera(
+        id: camera.id,
+        name: camera.name,
+        host: camera.host,
+        port: camera.port,
+        localPort: localPort,
+      );
+      for (var i = 0; i < 20; i++) {
+        final client = ViscaClient(
+          fixedCamera,
+          onLog: (_) {},
+          onReply: () {},
+          onError: (_) {},
+        );
+        addTearDown(client.close);
+        await client.open();
+        final pending = client.send('Position', Visca.panTiltInquiry);
+        final closing = client.close();
+        expect(client.close(), same(closing));
+        await closing;
+        expect(await pending, isNull);
+        final rebound = await RawDatagramSocket.bind(
+          InternetAddress.anyIPv4,
+          localPort,
+          reuseAddress: false,
+        );
+        await rebound.listen((_) {}).cancel();
+      }
+    },
+  );
+
+  test(
+    'close waits for an in-progress bind and prevents subsequent sends',
+    () async {
+      final client = ViscaClient(
+        camera,
+        onLog: (_) {},
+        onReply: () {},
+        onError: (_) {},
+      );
+      addTearDown(client.close);
+      final opening = client.open();
+      await client.close();
+      await opening;
+      expect(await client.send('Home', Visca.home), isNull);
+    },
+  );
+
+  test(
     'raw UDP inquiries read actual replies and log full endpoints',
     () async {
       serve(

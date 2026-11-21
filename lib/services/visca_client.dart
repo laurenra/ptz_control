@@ -51,6 +51,8 @@ class ViscaClient {
   final Duration timeout;
   RawDatagramSocket? _socket;
   StreamSubscription<RawSocketEvent>? _subscription;
+  Future<void>? _opening;
+  Future<void>? _closing;
   final _queue = Queue<_Request>();
   _Request? _active;
   bool _draining = false;
@@ -58,15 +60,14 @@ class ViscaClient {
   int _sequence = 0;
   Completer<void>? _resetReply;
 
-  Future<void> open() async {
+  Future<void> open() => _opening ??= _open();
+
+  Future<void> _open() async {
+    if (_closed) return;
     final socket = await RawDatagramSocket.bind(
       InternetAddress.anyIPv4,
       camera.localPort,
     );
-    if (_closed) {
-      socket.close();
-      return;
-    }
     _socket = socket;
     _subscription = socket.listen(
       _read,
@@ -74,6 +75,8 @@ class ViscaClient {
         onError('UDP error: $error');
       },
     );
+    // close() also waits for a bind already in progress and releases its socket.
+    if (_closed) return;
     if (camera.transport == ViscaTransport.sony) {
       _resetReply = Completer<void>();
       const reset = [2, 0, 0, 1, 0, 0, 0, 0, 1];
@@ -281,7 +284,8 @@ class ViscaClient {
     }
   }
 
-  void close() {
+  Future<void> close() {
+    if (_closing != null) return _closing!;
     _closed = true;
     final reset = _resetReply;
     if (reset != null && !reset.isCompleted) reset.complete();
@@ -291,8 +295,23 @@ class ViscaClient {
       request.result.complete(null);
     }
     _queue.clear();
-    unawaited(_subscription?.cancel());
-    _socket?.close();
+    return _closing = _finishClose();
+  }
+
+  Future<void> _finishClose() async {
+    // A selection can be cancelled while bind() is still opening its socket.
+    try {
+      await _opening;
+    } catch (_) {
+      // A failed bind has no socket to release; open() reports the error.
+    }
+    final subscription = _subscription;
+    _subscription = null;
+    final socket = _socket;
     _socket = null;
+    socket?.close();
+    // Cancelling the datagram subscription waits for native socket cleanup.
+    // Calling socket.close() alone only starts that asynchronous operation.
+    await subscription?.cancel();
   }
 }

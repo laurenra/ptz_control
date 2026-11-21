@@ -20,10 +20,12 @@ void main() {
   var malformed = false;
   var error = false;
   var ackOnly = false;
+  int? replyPort;
 
   setUp(() async {
     sony = malformed = error = ackOnly = false;
     respond = true;
+    replyPort = null;
     received = [];
     server = await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0);
     camera = Camera(id: 'test', name: '', host: '127.0.0.1', port: server.port);
@@ -35,7 +37,11 @@ void main() {
         received.add(p);
         if (!respond) continue;
         if (sony && p.data[0] == 2) {
-          server.send([2, 1, 0, 1, 0, 0, 0, 0, 1], p.address, p.port);
+          server.send(
+            [2, 1, 0, 1, 0, 0, 0, 0, 1],
+            p.address,
+            replyPort ?? p.port,
+          );
           continue;
         }
         if (!sony && p.data[0] != 0x81) continue;
@@ -72,9 +78,9 @@ void main() {
           bytes[1] = 0x11;
           ByteData.sublistView(bytes).setUint16(2, payload.length);
           bytes.setRange(8, bytes.length, payload);
-          server.send(bytes, p.address, p.port);
+          server.send(bytes, p.address, replyPort ?? p.port);
         } else {
-          server.send(payload, p.address, p.port);
+          server.send(payload, p.address, replyPort ?? p.port);
         }
       }
     });
@@ -159,6 +165,79 @@ void main() {
     expect(await controller.testCameraConnection(camera), false);
     expect(received, isEmpty);
   });
+
+  test(
+    'fixed-reply-port cameras can be tested and switched repeatedly',
+    () async {
+      final available = await RawDatagramSocket.bind(
+        InternetAddress.anyIPv4,
+        0,
+      );
+      final localPort = available.port;
+      await available.listen((_) {}).cancel();
+      // This peer always replies to the configured controller port, even if
+      // a command comes from an ephemeral source port.
+      replyPort = localPort;
+      expect(await controller.testCameraConnection(camera), false);
+      camera = Camera(
+        id: 'first',
+        name: 'First',
+        host: camera.host,
+        port: camera.port,
+        localPort: localPort,
+      );
+      final otherServer = await RawDatagramSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final otherSubscription = otherServer.listen((event) {
+        if (event != RawSocketEvent.read) return;
+        Datagram? packet;
+        while ((packet = otherServer.receive()) != null) {
+          final p = packet!;
+          final register = p.data[3];
+          final response = switch (register) {
+            0x12 => [0x90, 0x50, 0, 0, 0, 2, 0, 0, 0, 3, 255],
+            0x47 ||
+            0x4a ||
+            0x4b ||
+            0x4c ||
+            0x43 ||
+            0x44 => [0x90, 0x50, 0, 0, 0, 4, 255],
+            _ => [0x90, 0x50, 3, 255],
+          };
+          otherServer.send(response, p.address, localPort);
+        }
+      });
+      addTearDown(() async {
+        await otherSubscription.cancel();
+        otherServer.close();
+      });
+      final other = Camera(
+        id: 'second',
+        name: 'Second',
+        host: camera.host,
+        port: otherServer.port,
+        localPort: localPort,
+      );
+      controller.cameras = [camera, other];
+      await controller.select(camera);
+      for (var i = 0; i < 5; i++) {
+        expect(await controller.testCameraConnection(other), true);
+        expect(controller.selected, same(camera));
+        expect(controller.connection, CameraConnection.connected);
+        expect(controller.pan, 1);
+        await controller.select(other);
+        expect(controller.connection, CameraConnection.connected);
+        expect(controller.pan, 2);
+        expect(controller.message, isNull);
+        await controller.select(camera);
+        expect(controller.connection, CameraConnection.connected);
+        expect(controller.pan, 1);
+        expect(controller.message, isNull);
+      }
+    },
+  );
 
   test(
     'testing an active camera reuses its fixed local port and connection',
