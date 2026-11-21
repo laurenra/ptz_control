@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'camera_preset.dart';
 import 'camera_limits.dart';
+import 'camera_info.dart';
 
 enum ViscaTransport { raw, sony }
 
@@ -15,6 +16,7 @@ class Camera {
     this.localPort = 0,
     this.presets = const [],
     this.limits,
+    this.info,
   });
 
   final int id;
@@ -25,6 +27,7 @@ class Camera {
   final int localPort;
   final List<CameraPreset> presets;
   final CameraLimits? limits;
+  final CameraInfo? info;
 
   Camera withPresets(List<CameraPreset> values) => Camera(
     id: id,
@@ -35,6 +38,7 @@ class Camera {
     localPort: localPort,
     presets: List.unmodifiable(values),
     limits: limits,
+    info: info,
   );
 
   Camera withLimits(CameraLimits values) => Camera(
@@ -46,6 +50,19 @@ class Camera {
     localPort: localPort,
     presets: presets,
     limits: values,
+    info: info,
+  );
+
+  Camera withInfo(CameraInfo value) => Camera(
+    id: id,
+    name: name,
+    host: host,
+    port: port,
+    transport: transport,
+    localPort: localPort,
+    presets: presets,
+    limits: limits,
+    info: value,
   );
 
   String get endpoint => '$host:$port';
@@ -74,6 +91,7 @@ class Camera {
     'localPort': localPort,
     'presets': presets.map((p) => p.toJson()).toList(),
     if (limits != null) 'limits': limits!.toJson(),
+    if (info != null) 'info': info!.toJson(),
   };
 
   factory Camera.fromJson(Map<String, dynamic> json) {
@@ -87,6 +105,9 @@ class Camera {
       limits: json['limits'] == null
           ? null
           : CameraLimits.fromJson(json['limits'] as Map<String, dynamic>),
+      info: json['info'] == null
+          ? null
+          : CameraInfo.fromJson(json['info'] as Map<String, dynamic>),
       presets: List.unmodifiable(
         (json['presets'] as List? ?? []).map(
           (p) => CameraPreset.fromJson(p as Map<String, dynamic>),

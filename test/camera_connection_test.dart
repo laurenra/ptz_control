@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,6 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ptz_control/controller.dart';
 import 'package:ptz_control/models/camera.dart';
 import 'package:ptz_control/services/visca_protocol.dart';
+import 'package:ptz_control/services/camera_info_service.dart';
+
+import 'camera_info_service_test.dart' show envelope, deviceInfo, interface;
 
 import 'visca_client_test.dart' show MemoryStore;
 
@@ -299,5 +303,53 @@ void main() {
     expect(controller.canOperate, true);
     expect(controller.connection, CameraConnection.connected);
     expect(controller.pan, 1);
+  });
+
+  test('camera identity lookup preserves the active UDP connection and does not save until requested', () async {
+    final web = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => web.close(force: true));
+    final requested = Completer<void>();
+    final release = Completer<void>();
+    web.listen((request) async {
+      final body = await utf8.decoder.bind(request).join();
+      if (!requested.isCompleted) requested.complete();
+      await release.future;
+      request.response.write(
+        body.contains('<d:GetDeviceInformation ')
+            ? deviceInfo()
+            : envelope(
+                'GetNetworkInterfaces',
+                interface('02:AA:BB:CC:DD:01', camera.host),
+              ),
+      );
+      await request.response.close();
+    });
+    controller.cameras = [camera];
+    await controller.select(camera);
+    final sourcePort = received.last.port;
+    final lookup = controller.getCameraInfo(
+      camera,
+      CameraInfoOptions(port: web.port),
+    );
+    await requested.future;
+    expect(controller.canTransferCameraSettings, false);
+    final concurrent = await controller.getCameraInfo(
+      camera,
+      CameraInfoOptions(port: web.port),
+    );
+    expect(concurrent.info, isNull);
+    expect(concurrent.message, contains('busy'));
+    expect(controller.selected, same(camera));
+    expect(controller.connection, CameraConnection.connected);
+    release.complete();
+    final result = await lookup;
+    expect(result.info!.serialNumber, 'SN-123');
+    expect(controller.cameras.single.info, isNull);
+    expect(controller.canTransferCameraSettings, true);
+    received.clear();
+    await controller.refresh();
+    expect(received, isNotEmpty);
+    expect(received.every((packet) => packet.port == sourcePort), true);
+    expect(controller.connection, CameraConnection.connected);
   });
 }

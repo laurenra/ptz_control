@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ptz_control/models/camera.dart';
 import 'package:ptz_control/models/camera_limits.dart';
+import 'package:ptz_control/models/camera_info.dart';
 import 'package:ptz_control/services/camera_store.dart';
+import 'package:ptz_control/services/camera_info_service.dart';
 import 'package:ptz_control/widgets/camera_editor.dart';
 import 'package:ptz_control/widgets/connection_status.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -21,6 +23,7 @@ void main() {
     Future<CameraLimits> Function(Camera)? onTestLimits,
     Future<void> Function()? onStopLimits,
     Future<bool> Function(Camera)? onSave,
+    Future<CameraInfoResult> Function(Camera, CameraInfoOptions)? onGetInfo,
   }) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1;
@@ -38,6 +41,10 @@ void main() {
                   newCameraId: 42,
                   onSave: onSave ?? (_) async => true,
                   onTest: onTest,
+                  onGetInfo:
+                      onGetInfo ??
+                      (_, _) async =>
+                          throw StateError('Unexpected camera info query'),
                   onTestLimits:
                       onTestLimits ??
                       (_) async => throw StateError('Unexpected limit test'),
@@ -223,6 +230,181 @@ void main() {
     zoomMax: 80,
   );
 
+  const cameraInfo = CameraInfo(
+    manufacturer: 'Example',
+    model: 'PTZ 20X',
+    serialNumber: 'SN-123',
+    macAddress: '02:AA:BB:CC:DD:01',
+    sourceHost: '192.168.1.10',
+  );
+
+  testWidgets(
+    'gets identity below Test connection and saves it for reopening',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final result = Completer<CameraInfoResult>();
+      final store = PreferencesCameraStore();
+      Camera? queried;
+      await openEditor(
+        tester,
+        onTest: (_) async => false,
+        onGetInfo: (camera, options) {
+          queried = camera;
+          expect(options.port, 80);
+          return result.future;
+        },
+        onSave: (camera) async {
+          await store.save([camera]);
+          return true;
+        },
+      );
+      final button = find.text('Get camera info');
+      expect(
+        tester.getRect(button).top,
+        greaterThan(tester.getRect(find.text('Test connection')).bottom),
+      );
+      await tester.enterText(field('IPv4 address'), '192.168.1.10');
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pump();
+      expect(queried!.name, isEmpty);
+      expect(queried!.host, '192.168.1.10');
+      expect(find.text('Getting camera info…'), findsOneWidget);
+      expect(
+        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+        isNull,
+      );
+      result.complete(
+        const CameraInfoResult(cameraInfo, 'Camera info retrieved.'),
+      );
+      await tester.pumpAndSettle();
+      for (final field in {
+        'manufacturer': 'Example',
+        'model': 'PTZ 20X',
+        'serial': 'SN-123',
+        'mac': '02:AA:BB:CC:DD:01',
+      }.entries) {
+        expect(
+          tester
+              .widget<Text>(find.byKey(ValueKey('camera-info-${field.key}')))
+              .data,
+          field.value,
+        );
+      }
+      await tester.enterText(field('Camera name'), 'Stage');
+      await tester.tap(find.text('Save camera'));
+      await tester.pumpAndSettle();
+      final saved = (await PreferencesCameraStore().load()).single;
+      expect(saved.info!.toJson(), cameraInfo.toJson());
+      await openEditor(tester, camera: saved, onTest: (_) async => false);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('camera-info-serial')))
+            .data,
+        'SN-123',
+      );
+    },
+  );
+
+  testWidgets(
+    'partial and failed identity queries preserve saved info and limits',
+    (tester) async {
+      var attempt = 0;
+      Camera? saved;
+      await openEditor(
+        tester,
+        camera: const Camera(
+          id: 1,
+          name: 'Stage',
+          host: '192.168.1.10',
+          port: 52381,
+          limits: limits,
+          info: cameraInfo,
+        ),
+        onTest: (_) async => true,
+        onGetInfo: (_, _) async {
+          if (++attempt == 2) throw StateError('Offline');
+          return const CameraInfoResult(
+            CameraInfo(model: 'PTZ 30X', sourceHost: '192.168.1.10'),
+            'Partial info',
+          );
+        },
+        onSave: (camera) async {
+          saved = camera;
+          return true;
+        },
+      );
+      for (var i = 0; i < 2; i++) {
+        await tester.ensureVisible(find.text('Get camera info'));
+        await tester.tap(find.text('Get camera info'));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('camera-info-model')))
+              .data,
+          'PTZ 30X',
+        );
+        expect(
+          tester
+              .widget<Text>(find.byKey(const ValueKey('camera-info-serial')))
+              .data,
+          'SN-123',
+        );
+      }
+      await tester.tap(find.text('Save camera'));
+      await tester.pumpAndSettle();
+      expect(saved!.info!.manufacturer, 'Example');
+      expect(saved!.info!.macAddress, cameraInfo.macAddress);
+      expect(saved!.limits!.toJson(), limits.toJson());
+    },
+  );
+
+  testWidgets(
+    'optional web connection and credentials are passed only to the info query',
+    (tester) async {
+      CameraInfoOptions? options;
+      Camera? saved;
+      await openEditor(
+        tester,
+        onTest: (_) async => false,
+        onGetInfo: (_, connection) async {
+          options = connection;
+          return const CameraInfoResult(cameraInfo, 'Found');
+        },
+        onSave: (camera) async {
+          saved = camera;
+          return true;
+        },
+      );
+      await tester.enterText(field('IPv4 address'), '192.168.1.10');
+      await tester.enterText(field('Camera name'), 'Stage');
+      await tester.ensureVisible(find.text('Camera info connection'));
+      await tester.tap(find.text('Camera info connection'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Use HTTPS'));
+      await tester.tap(find.text('Use HTTPS'));
+      await tester.pumpAndSettle();
+      await tester.enterText(field('Web / ONVIF port'), '8443');
+      await tester.enterText(field('Camera username'), 'camera-operator');
+      await tester.enterText(field('Camera password'), 'secret-for-this-query');
+      await tester.ensureVisible(find.text('Get camera info'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Get camera info'));
+      await tester.pumpAndSettle();
+      expect(options!.https, true);
+      expect(options!.port, 8443);
+      expect(options!.username, 'camera-operator');
+      expect(options!.password, 'secret-for-this-query');
+      await tester.tap(find.text('Save camera'));
+      await tester.pumpAndSettle();
+      expect(saved!.toJson().toString(), isNot(contains('camera-operator')));
+      expect(
+        saved!.toJson().toString(),
+        isNot(contains('secret-for-this-query')),
+      );
+    },
+  );
+
   for (final setting in [
     'IPv4 address',
     'Camera port',
@@ -327,6 +509,8 @@ void main() {
       );
       await tester.enterText(field('Camera name'), 'New camera');
       await tester.enterText(field('IPv4 address'), '192.168.1.10');
+      // Let the focused field finish scrolling before revealing controls below it.
+      await tester.pumpAndSettle();
       final button = find.text('Test & save limits');
       await tester.ensureVisible(button);
       await tester.pumpAndSettle();

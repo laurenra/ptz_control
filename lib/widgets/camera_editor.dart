@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 
 import '../models/camera.dart';
 import '../models/camera_limits.dart';
+import '../models/camera_info.dart';
+import '../services/camera_info_service.dart';
 import 'connection_status.dart';
 
 class CameraEditor extends StatefulWidget {
@@ -14,6 +16,7 @@ class CameraEditor extends StatefulWidget {
     required this.newCameraId,
     required this.onSave,
     required this.onTest,
+    required this.onGetInfo,
     required this.onTestLimits,
     required this.onStopLimits,
   });
@@ -21,6 +24,7 @@ class CameraEditor extends StatefulWidget {
   final int newCameraId;
   final Future<bool> Function(Camera) onSave;
   final Future<bool> Function(Camera) onTest;
+  final Future<CameraInfoResult> Function(Camera, CameraInfoOptions) onGetInfo;
   final Future<CameraLimits> Function(Camera) onTestLimits;
   final Future<void> Function() onStopLimits;
 
@@ -32,6 +36,14 @@ class _CameraEditorState extends State<CameraEditor> {
   final _form = GlobalKey<FormState>();
   late final _cameraId = widget.camera?.id ?? widget.newCameraId;
   late CameraLimits? _limits = widget.camera?.limits;
+  late CameraInfo? _info = widget.camera?.info;
+  final _infoPort = TextEditingController(text: '80');
+  final _infoUsername = TextEditingController();
+  final _infoPassword = TextEditingController();
+  bool _infoHttps = false;
+  bool _showInfoConnection = false;
+  bool _gettingInfo = false;
+  String? _infoMessage;
   final _hostKey = GlobalKey<FormFieldState<String>>();
   final _portKey = GlobalKey<FormFieldState<String>>();
   final _localKey = GlobalKey<FormFieldState<String>>();
@@ -50,7 +62,7 @@ class _CameraEditorState extends State<CameraEditor> {
   bool _testing = false;
   bool _connected = false;
   bool _testingLimits = false;
-  bool get _busy => _saving || _testing || _testingLimits;
+  bool get _busy => _saving || _testing || _testingLimits || _gettingInfo;
   String? _error;
 
   @override
@@ -81,7 +93,15 @@ class _CameraEditorState extends State<CameraEditor> {
   @override
   void dispose() {
     if (_testingLimits) unawaited(widget.onStopLimits());
-    for (final field in [_name, _host, _port, _local]) {
+    for (final field in [
+      _name,
+      _host,
+      _port,
+      _local,
+      _infoPort,
+      _infoUsername,
+      _infoPassword,
+    ]) {
       field.dispose();
     }
     super.dispose();
@@ -114,7 +134,56 @@ class _CameraEditorState extends State<CameraEditor> {
     transport: _transport,
     presets: widget.camera?.presets ?? const [],
     limits: _limits,
+    info: _info,
   );
+
+  Future<void> _getCameraInfo() async {
+    if (_busy) return;
+    final valid = [
+      _hostKey,
+      _portKey,
+      _localKey,
+    ].map((key) => key.currentState!.validate()).toList();
+    if (valid.contains(false)) return;
+    final port = int.tryParse(_infoPort.text);
+    if (port == null || port < 1 || port > 65535) {
+      setState(() {
+        _showInfoConnection = true;
+        _infoMessage = 'Enter a web port between 1 and 65535.';
+      });
+      return;
+    }
+    setState(() {
+      _gettingInfo = true;
+      _infoMessage = null;
+    });
+    try {
+      final result = await widget.onGetInfo(
+        _enteredCamera(),
+        CameraInfoOptions(
+          port: port,
+          https: _infoHttps,
+          username: _infoUsername.text,
+          password: _infoPassword.text,
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        if (result.info != null && !result.info!.isEmpty) {
+          _info = _info?.merge(result.info!) ?? result.info;
+        }
+        _infoMessage = result.message;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _infoMessage = 'Could not retrieve camera information. Existing saved information was kept.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _gettingInfo = false);
+    }
+  }
 
   Future<void> _testLimits() async {
     if (_busy || !_form.currentState!.validate()) return;
@@ -265,6 +334,124 @@ class _CameraEditorState extends State<CameraEditor> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton(
+                    onPressed: _busy ? null : _getCameraInfo,
+                    child: Text(
+                      _gettingInfo ? 'Getting camera info…' : 'Get camera info',
+                    ),
+                  ),
+                ),
+                if (_infoMessage != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _infoMessage!,
+                    style: const TextStyle(fontSize: 12, color: Colors.white60),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Table(
+                  columnWidths: const {
+                    0: FixedColumnWidth(110),
+                    1: FlexColumnWidth(),
+                  },
+                  children: [
+                    for (final item in [
+                      ('manufacturer', 'Manufacturer', _info?.manufacturer),
+                      ('model', 'Model', _info?.model),
+                      ('serial', 'Serial number', _info?.serialNumber),
+                      ('mac', 'MAC address', _info?.macAddress),
+                    ])
+                      TableRow(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              item.$2,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.white60,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            item.$3 ??
+                                (_info == null
+                                    ? 'Not retrieved'
+                                    : 'Not reported'),
+                            key: ValueKey('camera-info-${item.$1}'),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+                if (_info?.sourceHost != null)
+                  Text(
+                    'Last retrieved from ${_info!.sourceHost}',
+                    style: const TextStyle(fontSize: 11, color: Colors.white60),
+                  ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(
+                            () => _showInfoConnection = !_showInfoConnection,
+                          ),
+                    child: const Text('Camera info connection'),
+                  ),
+                ),
+                if (_showInfoConnection) ...[
+                  TextField(
+                    controller: _infoPort,
+                    enabled: !_busy,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Web / ONVIF port',
+                    ),
+                  ),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Use HTTPS'),
+                    value: _infoHttps,
+                    onChanged: _busy
+                        ? null
+                        : (value) => setState(() {
+                            _infoHttps = value!;
+                            if (_infoPort.text == '80' ||
+                                _infoPort.text == '443') {
+                              _infoPort.text = _infoHttps ? '443' : '80';
+                            }
+                          }),
+                  ),
+                  TextField(
+                    controller: _infoUsername,
+                    enabled: !_busy,
+                    autocorrect: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Camera username',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _infoPassword,
+                    enabled: !_busy,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: const InputDecoration(
+                      labelText: 'Camera password',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Login details are used for this lookup only and are not saved or exported.',
+                    style: TextStyle(fontSize: 12, color: Colors.white60),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,

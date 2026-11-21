@@ -77,6 +77,7 @@ class _ControlShellState extends State<ControlShell>
         newCameraId: c.nextCameraId,
         onSave: c.saveCamera,
         onTest: c.testCameraConnection,
+        onGetInfo: c.getCameraInfo,
         onTestLimits: c.testAndSaveCameraLimits,
         onStopLimits: c.cancelLimitTest,
       ),

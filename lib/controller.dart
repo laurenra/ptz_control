@@ -10,6 +10,7 @@ import 'services/camera_limit_tester.dart';
 import 'services/camera_store.dart';
 import 'services/visca_client.dart';
 import 'services/visca_protocol.dart';
+import 'services/camera_info_service.dart';
 
 enum CameraConnection { none, connecting, connected, offline, paused }
 
@@ -38,8 +39,11 @@ class PtzController extends ChangeNotifier {
   PtzController({
     CameraStore? store,
     CameraLimitTester Function(ViscaClient)? limitTesterFactory,
+    CameraInfoService? cameraInfoService,
   }) : _store = store ?? PreferencesCameraStore(),
+       _cameraInfoService = cameraInfoService ?? const CameraInfoService(),
        _limitTesterFactory = limitTesterFactory ?? CameraLimitTester.new;
+  final CameraInfoService _cameraInfoService;
   final CameraStore _store;
   final CameraLimitTester Function(ViscaClient) _limitTesterFactory;
   CameraLimitTester? _limitTester;
@@ -276,6 +280,33 @@ class PtzController extends ChangeNotifier {
 
   /// The preset dialog shows freshly queried exposure mode and iris values.
   Future<void> refreshPresetSettings() => _query([0x39, 0x4b]);
+
+  /// Read device identity through HTTP without replacing the active UDP client.
+  Future<CameraInfoResult> getCameraInfo(
+    Camera camera,
+    CameraInfoOptions options,
+  ) async {
+    if (_disposed ||
+        _paused ||
+        switching ||
+        presetBusy ||
+        saving ||
+        _testingConnection) {
+      return const CameraInfoResult(
+        null,
+        'Camera is busy. Try again when the current operation finishes.',
+      );
+    }
+    _testingConnection = true;
+    _notify();
+    try {
+      await endMotion();
+      return await _cameraInfoService.lookup(camera, options);
+    } finally {
+      _testingConnection = false;
+      _notify();
+    }
+  }
 
   /// Check unsaved network settings with a read-only pan/tilt inquiry.
   Future<bool> testCameraConnection(Camera camera) async {
