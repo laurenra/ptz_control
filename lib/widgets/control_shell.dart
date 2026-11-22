@@ -67,6 +67,10 @@ class _ControlShellState extends State<ControlShell>
 
   Future<void> _navigate(int index) async {
     if (index == _tab) return;
+    if (c.changingOsdNavigation || c.osdBusy) return;
+    if (c.osdNavigation) {
+      await c.setOsdNavigation(false, refreshStatus: false);
+    }
     await c.endMotion();
     if (!mounted) return;
     setState(() => _tab = index);
@@ -352,7 +356,11 @@ class _ControlShellState extends State<ControlShell>
           ),
         )
         .toList(),
-    onChanged: c.switching || c.presetBusy
+    onChanged:
+        c.switching ||
+            c.presetBusy ||
+            c.osdNavigation ||
+            c.changingOsdNavigation
         ? null
         : (id) {
             if (id != null) {
@@ -476,7 +484,7 @@ class _ControlShellState extends State<ControlShell>
         'Save preset',
         c.savePresetMode,
         c.setSavePresetMode,
-        enabled: !c.presetBusy,
+        enabled: !c.presetBusy && !c.osdNavigation && !c.changingOsdNavigation,
         fontSize: 11,
       );
       final aperture = _check(
@@ -485,7 +493,7 @@ class _ControlShellState extends State<ControlShell>
             : 'Use exposure from preset',
         c.saveExposureWithPreset,
         c.setSaveExposureWithPreset,
-        enabled: !c.presetBusy,
+        enabled: !c.presetBusy && !c.osdNavigation && !c.changingOsdNavigation,
         fontSize: 11,
         textAlign: TextAlign.start,
       );
@@ -555,7 +563,7 @@ class _ControlShellState extends State<ControlShell>
         'Move until stopped',
         c.moveUntilStopped,
         c.setMoveUntilStopped,
-        enabled: c.canControl && !c.presetBusy,
+        enabled: c.canOperate,
         fontSize: 10,
       );
       final aperture = _stepSetting(
@@ -567,13 +575,15 @@ class _ControlShellState extends State<ControlShell>
         compact: true,
         enabled: !c.moving && [0x03, 0x0b].contains(c.exposureMode),
       );
-      final home = IconButton(
-        tooltip: 'Return camera home',
-        onPressed: c.canOperate && !c.moving
-            ? () => unawaited(c.command('Return home', Visca.home))
-            : null,
-        icon: const Icon(Icons.home_outlined, size: 22, color: _accent),
-      );
+      final home = c.osdNavigation
+          ? SizedBox(height: 36, child: _osdButton(OsdKey.menu, Icons.menu))
+          : IconButton(
+              tooltip: 'Return camera home',
+              onPressed: c.canOperate && !c.moving
+                  ? () => unawaited(c.command('Return home', Visca.home))
+                  : null,
+              icon: const Icon(Icons.home_outlined, size: 22, color: _accent),
+            );
       final alignedHome = Align(
         alignment: Alignment.centerLeft,
         child: SizedBox(
@@ -582,12 +592,17 @@ class _ControlShellState extends State<ControlShell>
           child: Center(child: home),
         ),
       );
-      const header = Text(
-        'SPEED',
-        style: TextStyle(
+      final header = Tooltip(
+        message: 'Changes controls only. Use Menu / Back to open or close the camera menu.',
+        child: _check(
+          'OSD navigation',
+          c.osdNavigation,
+          (enabled) => unawaited(c.setOsdNavigation(enabled)),
+          enabled:
+              !c.changingOsdNavigation &&
+              !c.osdBusy &&
+              (c.osdNavigation || c.canOperate),
           fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
         ),
       );
       final speedAndLens = SizedBox(
@@ -666,7 +681,7 @@ class _ControlShellState extends State<ControlShell>
                             c.syncPanTilt ? Icons.link : Icons.link_off,
                           ),
                           color: c.syncPanTilt ? _accent : _muted,
-                          onPressed: c.moving || c.presetBusy
+                          onPressed: c.moving || !c.canOperate
                               ? null
                               : () => c.setSyncPanTilt(!c.syncPanTilt),
                         ),
@@ -887,6 +902,7 @@ class _ControlShellState extends State<ControlShell>
       ('Pan right / tilt down', Icons.south_east, 2, 2),
     ];
     return Column(
+      key: ValueKey(c.osdNavigation),
       children: List.generate(
         3,
         (row) => Padding(
@@ -900,31 +916,47 @@ class _ControlShellState extends State<ControlShell>
                   padding: EdgeInsets.only(right: col < 2 ? 6 : 0),
                   child: SizedBox(
                     height: (194 - 12) / 3,
-                    child: HoldButton(
-                      label: d.$1,
-                      icon: d.$2,
-                      // iconColor: stop ? const Color(0xffffb9aa) : null,
-                      iconColor: stop ? const Color(0xfff55656) : null,
-                      tooltip: stop
-                          ? d.$1
-                          : c.moveUntilStopped
-                          ? '${d.$1} · move until stopped'
-                          : null,
-                      enabled: stop ? c.canControl : c.canOperate,
-                      compact: true,
-                      stopOnRelease: stop || !c.moveUntilStopped,
-                      active: !stop && c.motionOwnedBy(d.$1),
-                      onStart: () {
-                        if (stop) {
-                          unawaited(c.stopAll());
-                          return true;
-                        }
-                        return c.startPanTilt(d.$1, d.$3, d.$4, owner: d.$1);
-                      },
-                      onStop: () {
-                        if (!stop) unawaited(c.endMotion(owner: d.$1));
-                      },
-                    ),
+                    child: c.osdNavigation && (row == 1 || col == 1)
+                        ? _osdButton(switch ((row, col)) {
+                            (0, 1) => OsdKey.up,
+                            (2, 1) => OsdKey.down,
+                            (1, 0) => OsdKey.left,
+                            (1, 2) => OsdKey.right,
+                            _ => OsdKey.enter,
+                          }, d.$2)
+                        : HoldButton(
+                            label: d.$1,
+                            icon: d.$2,
+                            // iconColor: stop ? const Color(0xffffb9aa) : null,
+                            iconColor: stop ? const Color(0xfff55656) : null,
+                            tooltip: stop
+                                ? d.$1
+                                : c.moveUntilStopped
+                                ? '${d.$1} · move until stopped'
+                                : null,
+                            enabled:
+                                !c.osdNavigation &&
+                                !c.changingOsdNavigation &&
+                                (stop ? c.canControl : c.canOperate),
+                            compact: true,
+                            stopOnRelease: stop || !c.moveUntilStopped,
+                            active: !stop && c.motionOwnedBy(d.$1),
+                            onStart: () {
+                              if (stop) {
+                                unawaited(c.stopAll());
+                                return true;
+                              }
+                              return c.startPanTilt(
+                                d.$1,
+                                d.$3,
+                                d.$4,
+                                owner: d.$1,
+                              );
+                            },
+                            onStop: () {
+                              if (!stop) unawaited(c.endMotion(owner: d.$1));
+                            },
+                          ),
                   ),
                 ),
               );
@@ -934,6 +966,34 @@ class _ControlShellState extends State<ControlShell>
       ),
     );
   }
+
+  Widget _osdButton(OsdKey key, IconData icon) => HoldButton(
+    key: ValueKey('osd-${key.name}'),
+    label: switch (key) {
+      OsdKey.menu => 'OSD Menu / Back',
+      OsdKey.enter => 'OSD Enter',
+      _ => 'OSD ${key.name}',
+    },
+    tooltip: key == OsdKey.menu
+        ? 'Open the camera menu or go back; repeat to exit'
+        : key == OsdKey.enter
+        ? 'OSD Enter'
+        : 'OSD ${key.name}',
+    icon: icon,
+    text: switch (key) {
+      OsdKey.menu => 'Menu / Back',
+      OsdKey.enter => 'Enter',
+      _ => null,
+    },
+    compact: true,
+    enabled: c.canNavigateOsd,
+    onStart: () {
+      unawaited(c.osdCommand(key));
+      return true;
+    },
+    // Directional commands include their own immediate stop in the controller.
+    onStop: () {},
+  );
 
   Widget _speed(String label, int value, int min, int max) => SizedBox(
     height: 44,
@@ -958,7 +1018,9 @@ class _ControlShellState extends State<ControlShell>
         (i) => DropdownMenuItem(value: min + i, child: Text('${min + i}')),
       ),
       onChanged:
-          c.moving || c.presetBusy || (label == 'Focus' && c.autofocus != false)
+          c.moving ||
+              !c.canOperate ||
+              (label == 'Focus' && c.autofocus != false)
           ? null
           : (v) {
               if (v != null) c.setSpeed(label, v);

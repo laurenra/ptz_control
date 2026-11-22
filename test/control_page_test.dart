@@ -5,6 +5,7 @@ import 'package:ptz_control/controller.dart';
 import 'package:ptz_control/main.dart';
 import 'package:ptz_control/models/camera.dart';
 import 'package:ptz_control/models/camera_preset.dart';
+import 'package:ptz_control/services/visca_protocol.dart';
 import 'package:ptz_control/widgets/focus_depth_icon.dart';
 import 'package:ptz_control/widgets/hold_button.dart';
 
@@ -47,6 +48,11 @@ class _UiController extends PtzController {
       autofocus = bytes[4] == 2;
       notifyListeners();
     }
+  }
+
+  @override
+  Future<void> osdCommand(OsdKey key) async {
+    if (canNavigateOsd) commands.add(Visca.osd(key));
   }
 
   @override
@@ -140,6 +146,197 @@ class _MovementUiController extends _UiController {
 }
 
 void main() {
+  testWidgets('visible OSD arrows send their matching direction packets', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final c = _UiController();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(MyApp(controller: c));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('OSD navigation'));
+    await tester.pumpAndSettle();
+    final pad = find.byKey(const Key('movement-grid'));
+    final center = tester.getCenter(find.text('Enter'));
+    final cases = [
+      (Icons.north, const Offset(0, -1), [0x81, 1, 6, 1, 14, 14, 3, 1, 255]),
+      (Icons.south, const Offset(0, 1), [0x81, 1, 6, 1, 14, 14, 3, 2, 255]),
+      (Icons.west, const Offset(-1, 0), [0x81, 1, 6, 1, 14, 14, 1, 3, 255]),
+      (Icons.east, const Offset(1, 0), [0x81, 1, 6, 1, 14, 14, 2, 3, 255]),
+    ];
+    for (final (icon, direction, packet) in cases) {
+      final arrow = find.descendant(of: pad, matching: find.byIcon(icon));
+      final offset = tester.getCenter(arrow) - center;
+      expect(offset.dx.sign, direction.dx);
+      expect(offset.dy.sign, direction.dy);
+      await tester.tap(arrow);
+      await tester.pumpAndSettle();
+      expect(c.commands.last, packet);
+    }
+    expect(c.commands, cases.map((item) => item.$3).toList());
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+    'OSD mode stops movement, remaps the pad, and locks other controls',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final c = _MovementUiController();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MyApp(controller: c));
+      await tester.pumpAndSettle();
+      c.autofocus = false;
+      c.exposureMode = 3;
+      c.setMoveUntilStopped(true);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Pan right · move until stopped'));
+      await tester.pumpAndSettle();
+      expect(c.moving, true);
+      await tester.tap(find.text('OSD navigation'));
+      await tester.pumpAndSettle();
+      expect(c.osdNavigation, true);
+      expect(c.moving, false);
+      expect(c.movementStops, 1);
+      expect(c.commands, isEmpty);
+      expect(find.text('Enter'), findsOneWidget);
+      expect(find.byTooltip('Stop all movement'), findsNothing);
+      expect(find.byTooltip('Return camera home'), findsNothing);
+      expect(
+        tester
+            .widgetList<HoldButton>(find.byType(HoldButton))
+            .where((b) => !b.label.startsWith('OSD '))
+            .every((b) => !b.enabled),
+        true,
+      );
+      expect(
+        tester
+            .widgetList<DropdownButtonFormField<int>>(
+              find.byType(DropdownButtonFormField<int>),
+            )
+            .every((w) => w.onChanged == null),
+        true,
+      );
+      final checkboxes = tester.widgetList<Checkbox>(find.byType(Checkbox));
+      expect(checkboxes.where((w) => w.onChanged != null), hasLength(1));
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byWidgetPredicate(
+                (w) => w is IconButton && w.tooltip == 'Refresh camera status',
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<IconButton>(find.byKey(const Key('sync-pan-tilt')))
+            .onPressed,
+        isNull,
+      );
+      for (var slot = 1; slot <= 9; slot++) {
+        expect(
+          tester
+              .widget<OutlinedButton>(find.byKey(ValueKey('preset-$slot')))
+              .onPressed,
+          isNull,
+        );
+      }
+      for (final tooltip in [
+        'Aperture / iris: Open',
+        'Aperture / iris: Close',
+      ]) {
+        expect(
+          tester
+              .widget<IconButton>(
+                find.byWidgetPredicate(
+                  (w) => w is IconButton && w.tooltip == tooltip,
+                ),
+              )
+              .onPressed,
+          isNull,
+        );
+      }
+      for (final key in OsdKey.values) {
+        final button = find.byKey(ValueKey('osd-${key.name}'));
+        await tester.ensureVisible(button);
+        final held = await tester.startGesture(tester.getCenter(button));
+        await tester.pump(const Duration(seconds: 1));
+        await held.up();
+        await tester.pumpAndSettle();
+      }
+      expect(c.commands, OsdKey.values.map(Visca.osd).toList());
+      expect(c.directions, [(2, 3)]);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+      await tester.sendKeyRepeatEvent(LogicalKeyboardKey.space);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(c.commands, [
+        ...OsdKey.values.map(Visca.osd),
+        Visca.osd(OsdKey.enter),
+      ]);
+      final commands = List.of(c.commands);
+      await tester.tap(find.text('OSD navigation'));
+      await tester.pumpAndSettle();
+      expect(c.osdNavigation, false);
+      expect(c.moveUntilStopped, true);
+      expect(
+        [c.panSpeed, c.tiltSpeed, c.zoomSpeed, c.focusSpeed],
+        [8, 6, 3, 3],
+      );
+      expect(c.commands, commands);
+      expect(find.byTooltip('Stop all movement'), findsOneWidget);
+      expect(find.byTooltip('Return camera home'), findsOneWidget);
+      expect(
+        tester
+            .widget<OutlinedButton>(find.byKey(const ValueKey('preset-1')))
+            .onPressed,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testWidgets(
+    'OSD controls fit narrow side navigation and reset on page changes',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final c = _UiController();
+      c.toggleNavigation();
+      addTearDown(c.dispose);
+      await tester.pumpWidget(MyApp(controller: c));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('OSD navigation'));
+      await tester.tap(find.text('OSD navigation'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byKey(const Key('osd-menu')));
+      await tester.tap(find.byKey(const Key('osd-menu')));
+      await tester.pumpAndSettle();
+      expect(c.commands, [Visca.osd(OsdKey.menu)]);
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byTooltip('Image settings'));
+      await tester.pumpAndSettle();
+      expect(c.osdNavigation, false);
+      expect(c.canOperate, true);
+      expect(c.commands, [Visca.osd(OsdKey.menu)]);
+      await tester.tap(find.byTooltip('Control'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Stop all movement'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testWidgets(
     'app startup and lifecycle events reach the shared controller on any page',
     (tester) async {
@@ -481,7 +678,7 @@ void main() {
       );
       expect(balanceStatus.center.dy, closeTo(exposureStatus.center.dy, .1));
       expect(balanceStatus.left, greaterThan(exposureStatus.right));
-      expect(find.text('SPEED'), findsOneWidget);
+      expect(find.text('OSD navigation'), findsOneWidget);
       final movement = tester.getRect(find.byKey(const Key('movement-grid')));
       final speeds = tester.getRect(find.byKey(const Key('speed-controls')));
       expect(movement.top, closeTo(speeds.top, .1));

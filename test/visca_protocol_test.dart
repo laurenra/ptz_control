@@ -3,6 +3,16 @@ import 'package:ptz_control/models/camera.dart';
 import 'package:ptz_control/services/visca_protocol.dart';
 
 void main() {
+  test('OSD keys use the documented directions and fixed menu speeds', () {
+    expect(Visca.osd(OsdKey.menu), [0x81, 1, 4, 0x3f, 2, 0x5f, 255]);
+    expect(Visca.osd(OsdKey.up), [0x81, 1, 6, 1, 14, 14, 3, 1, 255]);
+    expect(Visca.osd(OsdKey.down), [0x81, 1, 6, 1, 14, 14, 3, 2, 255]);
+    expect(Visca.osd(OsdKey.left), [0x81, 1, 6, 1, 14, 14, 1, 3, 255]);
+    expect(Visca.osd(OsdKey.right), [0x81, 1, 6, 1, 14, 14, 2, 3, 255]);
+    expect(Visca.osd(OsdKey.enter), [0x81, 1, 6, 6, 5, 255]);
+    expect(Visca.osdStop, [0x81, 1, 6, 1, 14, 14, 3, 3, 255]);
+  });
+
   test('camera preset commands use zero-based memory addresses', () {
     expect(Visca.storePreset(1), [0x81, 1, 4, 0x3f, 1, 0, 255]);
     expect(Visca.storePreset(9), [0x81, 1, 4, 0x3f, 1, 8, 255]);

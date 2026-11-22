@@ -36,6 +36,8 @@ class _PanTiltMotion {
 }
 
 class PtzController extends ChangeNotifier {
+  static const _osdKeyPressDelay = Duration(milliseconds: 100);
+
   PtzController({
     CameraStore? store,
     CameraLimitTester Function(ViscaClient)? limitTesterFactory,
@@ -59,6 +61,19 @@ class PtzController extends ChangeNotifier {
   bool debug = false;
   bool syncPanTilt = false;
   bool moveUntilStopped = false;
+  bool _osdNavigation = false;
+  bool _changingOsdNavigation = false;
+  bool _osdBusy = false;
+  bool get osdNavigation => _osdNavigation;
+  bool get changingOsdNavigation => _changingOsdNavigation;
+  bool get osdBusy => _osdBusy;
+  bool get canNavigateOsd =>
+      osdNavigation &&
+      canControl &&
+      !presetBusy &&
+      !moving &&
+      !_changingOsdNavigation &&
+      !_osdBusy;
   bool savePresetMode = false;
   bool saveExposureWithPreset = false;
   bool presetBusy = false;
@@ -151,7 +166,8 @@ class PtzController extends ChangeNotifier {
     ).firstWhere((id) => !used.contains(id));
   }
 
-  bool get canOperate => canControl && !presetBusy;
+  bool get canOperate =>
+      canControl && !presetBusy && !osdNavigation && !_changingOsdNavigation;
   bool get moving => _motionClient != null;
   bool motionOwnedBy(Object owner) => moving && _motionOwner == owner;
   String get statusLabel => switch (connection) {
@@ -179,8 +195,20 @@ class PtzController extends ChangeNotifier {
     if (!_disposed && cameras.isNotEmpty) await select(cameras.first);
     if (_disposed) return;
     _watchdog = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_paused || _client == null || _recalling) return;
-      final reference = lastReply ?? _openedAt;
+      // OSD navigation deliberately suspends inquiries, so silence is expected.
+      if (_paused ||
+          _client == null ||
+          _recalling ||
+          osdNavigation ||
+          _changingOsdNavigation) {
+        return;
+      }
+      final reference =
+          lastReply != null &&
+              (_monitoringSince == null ||
+                  lastReply!.isAfter(_monitoringSince!))
+          ? lastReply
+          : _monitoringSince;
       if (reference != null &&
           DateTime.now().difference(reference).inSeconds >= 15 &&
           connection != CameraConnection.offline) {
@@ -194,11 +222,12 @@ class PtzController extends ChangeNotifier {
     });
   }
 
-  DateTime? _openedAt;
+  DateTime? _monitoringSince;
 
   Future<void> select(Camera camera) async {
     if (switching || _disposed) return;
     switching = true;
+    _osdNavigation = false;
     _pollTimer?.cancel();
     _notify();
     await endMotion();
@@ -249,7 +278,7 @@ class PtzController extends ChangeNotifier {
         await client.close();
         return;
       }
-      _openedAt = DateTime.now();
+      _monitoringSince = DateTime.now();
       _pollTimer = Timer.periodic(
         const Duration(seconds: 5),
         (_) => unawaited(_query([0x12, 0x47], scheduled: true)),
@@ -569,24 +598,111 @@ class PtzController extends ChangeNotifier {
 
   Future<void> command(String description, List<int> bytes) async {
     if (!canOperate || moving) return;
+    await _sendCommand(description, bytes);
+  }
+
+  Future<bool> _sendCommand(
+    String description,
+    List<int> bytes, {
+    Object? motionOwner,
+  }) async {
     message = null;
     final client = _client!;
     final changedSettings = _settingsChangedBy(bytes);
     final reply = await client.send(
       description,
       bytes,
-      motion: bytes.length > 3 && bytes[2] == 6 && bytes[3] == 4,
+      motion:
+          motionOwner != null ||
+          (bytes.length > 3 && bytes[2] == 6 && bytes[3] == 4),
       waitForCompletion: changedSettings.isNotEmpty,
       replyTimeout: bytes.length > 3 && bytes[2] == 4 && bytes[3] == 0x10
           ? const Duration(seconds: 10)
           : null,
     );
-    if (_client != client || _disposed) return;
+    if (_client != client ||
+        _disposed ||
+        (motionOwner != null && !motionOwnedBy(motionOwner))) {
+      return false;
+    }
     if (reply == null && message == null) {
       message = 'No acknowledgement: $description';
     }
     _notify();
     if (changedSettings.isNotEmpty) await _query(changedSettings);
+    return reply != null;
+  }
+
+  /// Local input mode only: never infer or toggle the camera's menu visibility.
+  Future<void> setOsdNavigation(
+    bool enabled, {
+    bool refreshStatus = true,
+  }) async {
+    if (_disposed ||
+        switching ||
+        presetBusy ||
+        _changingOsdNavigation ||
+        _osdBusy ||
+        enabled == osdNavigation ||
+        (enabled && !canControl)) {
+      return;
+    }
+    final client = _client;
+    _changingOsdNavigation = true;
+    _notify();
+    try {
+      await endMotion();
+      if (_disposed ||
+          switching ||
+          _client != client ||
+          (enabled && !canControl)) {
+        return;
+      }
+      _osdNavigation = enabled;
+      if (!enabled) _monitoringSince = DateTime.now();
+    } finally {
+      _changingOsdNavigation = false;
+      _notify();
+    }
+    if (!enabled && refreshStatus) await refreshControlStatus();
+  }
+
+  Future<void> osdCommand(OsdKey key) async {
+    if (!canNavigateOsd || _client == null || _disposed) return;
+    final directional = switch (key) {
+      OsdKey.up || OsdKey.down || OsdKey.left || OsdKey.right => true,
+      _ => false,
+    };
+    final owner = Object();
+    _osdBusy = true;
+    if (directional) {
+      // Track the brief press so focus loss, camera changes, and teardown can
+      // also stop it. Do not run PTZ limit monitoring or position inquiries.
+      _motionClient = _client;
+      _motionStop = Visca.osdStop;
+      _motionOwner = owner;
+    }
+    _notify();
+    try {
+      final acknowledged = await _sendCommand(
+        'OSD ${key == OsdKey.menu ? 'Menu / Back' : key.name}',
+        Visca.osd(key),
+        motionOwner: directional ? owner : null,
+      );
+      if (directional && acknowledged && motionOwnedBy(owner)) {
+        // Give the camera time to register a menu keypress before releasing it.
+        await Future<void>.delayed(_osdKeyPressDelay);
+      }
+    } finally {
+      try {
+        // Stop after the keypress pause, or immediately on timeout/error.
+        // Focus loss and teardown can stop earlier, using the original endpoint.
+        if (directional) await endMotion(owner: owner);
+      } finally {
+        _osdBusy = false;
+        _notify();
+      }
+    }
   }
 
   bool startMotion(

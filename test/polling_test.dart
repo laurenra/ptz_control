@@ -261,37 +261,66 @@ void main() {
     },
   );
 
-  test('automatic polling is PTZ only every five seconds, with no motion-triggered reads', () async {
-    received.clear();
-    await c.command('Return home', Visca.home);
-    c.startMotion(
-      'Pan right',
-      Visca.drive(8, 6, 2, 3),
-      Visca.drive(8, 6, 3, 3),
-    );
-    await c.endMotion();
-    c.startMotion(
-      'Zoom in',
-      Visca.lens(focus: false, positive: true, speed: 3),
-      Visca.camera(7, [0]),
-    );
-    await c.endMotion();
-    await c.recallPreset(1);
-    final firstPoll = Completer<void>();
-    final secondPoll = Completer<void>();
-    var zoomQueries = 0;
-    onInquiry = (register) {
-      if (register != 0x47) return;
-      zoomQueries++;
-      if (zoomQueries == 1) firstPoll.complete();
-      if (zoomQueries == 2) secondPoll.complete();
-    };
-    await Future<void>.delayed(const Duration(milliseconds: 2100));
-    expect(inquiries(), isEmpty);
-    await firstPoll.future.timeout(const Duration(seconds: 4));
-    expect(inquiries(), [0x12, 0x47]);
-    await secondPoll.future.timeout(const Duration(seconds: 6));
-    expect(inquiries(), [0x12, 0x47, 0x12, 0x47]);
-    expect(c.connection, CameraConnection.connected);
-  });
+  test(
+    'entering OSD stops the remainder of an in-flight status refresh',
+    () async {
+      received.clear();
+      holdExposure = Completer<Datagram>();
+      final refreshing = c.refreshControlStatus();
+      final packet = await holdExposure!.future.timeout(
+        const Duration(seconds: 1),
+      );
+      await c.setOsdNavigation(true);
+      server.send([0x90, 0x50, 3, 255], packet.address, packet.port);
+      await refreshing;
+      expect(inquiries(), [0x38, 0x39]);
+      await c.osdCommand(OsdKey.up);
+      expect(received.where((packet) => packet[1] == 1), [
+        Visca.osd(OsdKey.up),
+        Visca.osdStop,
+      ]);
+    },
+  );
+
+  test(
+    'automatic PTZ polling pauses during OSD navigation and resumes afterward',
+    () async {
+      received.clear();
+      await c.command('Return home', Visca.home);
+      c.startMotion(
+        'Pan right',
+        Visca.drive(8, 6, 2, 3),
+        Visca.drive(8, 6, 3, 3),
+      );
+      await c.endMotion();
+      c.startMotion(
+        'Zoom in',
+        Visca.lens(focus: false, positive: true, speed: 3),
+        Visca.camera(7, [0]),
+      );
+      await c.endMotion();
+      await c.recallPreset(1);
+      final firstPoll = Completer<void>();
+      final secondPoll = Completer<void>();
+      var zoomQueries = 0;
+      onInquiry = (register) {
+        if (register != 0x47) return;
+        zoomQueries++;
+        if (zoomQueries == 1) firstPoll.complete();
+        if (zoomQueries == 2) secondPoll.complete();
+      };
+      await Future<void>.delayed(const Duration(milliseconds: 2100));
+      expect(inquiries(), isEmpty);
+      await firstPoll.future.timeout(const Duration(seconds: 4));
+      expect(inquiries(), [0x12, 0x47]);
+      await c.setOsdNavigation(true);
+      expect(c.canOperate, false);
+      await Future<void>.delayed(const Duration(milliseconds: 5200));
+      expect(inquiries(), [0x12, 0x47]);
+      await c.setOsdNavigation(false, refreshStatus: false);
+      await secondPoll.future.timeout(const Duration(seconds: 6));
+      expect(inquiries(), [0x12, 0x47, 0x12, 0x47]);
+      expect(c.connection, CameraConnection.connected);
+    },
+  );
 }

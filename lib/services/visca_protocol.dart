@@ -1,6 +1,21 @@
 import 'dart:typed_data';
 
+enum OsdKey { menu, up, down, left, right, enter }
+
 class Visca {
+  // PTZOptics OSD commands: https://docs.ptzoptics.com/resources/visca-api/osd/
+  // Navigation uses fixed menu speeds, independent of the PTZ speed controls.
+  static List<int> osd(OsdKey key) => switch (key) {
+    OsdKey.menu => camera(0x3f, [2, 0x5f]),
+    OsdKey.up => drive(14, 14, 3, 1),
+    OsdKey.down => drive(14, 14, 3, 2),
+    OsdKey.left => drive(14, 14, 1, 3),
+    OsdKey.right => drive(14, 14, 2, 3),
+    OsdKey.enter => [0x81, 1, 6, 6, 5, 0xff],
+  };
+
+  static const osdStop = [0x81, 1, 6, 1, 0x0e, 0x0e, 3, 3, 0xff];
+
   static List<int> drive(int pan, int tilt, int horizontal, int vertical) {
     RangeError.checkValueInInterval(pan, 1, 24, 'pan');
     RangeError.checkValueInInterval(tilt, 1, 20, 'tilt');
