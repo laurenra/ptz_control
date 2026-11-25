@@ -17,12 +17,46 @@ Release builds package the application for use outside the development environme
 
 ### macOS
 
-Build on a Mac with Flutter and Xcode installed:
+Build on a Mac with Flutter and Xcode installed. This project currently uses **Flutter 3.50.0 with Dart 3.14**. Run `flutter doctor -v` and resolve any macOS/Xcode toolchain issues before building. The Mac used to compile the app must support the required development tools; it can be newer than the Mac that will run the app.
+
+The receiving Mac must run **macOS 13 Ventura or later** with the current native dependencies. Although the Xcode project targets macOS 12, the bundled `objective_c.framework` currently requires macOS 13.
+
+#### Intel Macs running macOS 13 or newer
+
+Build a universal app containing both **Intel (`x86_64`)** and **Apple Silicon (`arm64`)** support. You can run these commands on an Intel Mac with a compatible development toolchain, or on a newer Apple Silicon Mac and copy the finished app to the Intel Mac:
 
 ```sh
+flutter config --no-enable-macos-arm64-only
+flutter clean
 flutter pub get
 flutter build macos --release
 ```
+
+Verify that the executable includes Intel support:
+
+```sh
+lipo -archs \
+  build/macos/Build/Products/Release/ptz_control.app/Contents/MacOS/ptz_control
+```
+
+The output should include **`x86_64` and `arm64`**. An app containing only `arm64` will not run on an Intel Mac. The Flutter configuration setting persists across projects; explicitly disabling ARM-only builds ensures Intel support is included when switching back from the ARM build below.
+
+If the older Intel Mac cannot install the required Flutter/Xcode tools, build on a newer Mac and transfer the app using the packaging instructions below. The receiving Intel Mac only needs macOS 13 or later.
+
+#### Apple Silicon (ARM) Macs running macOS 13 or newer
+
+For an app specifically for newer **M-series Macs**, build on an Apple Silicon Mac and enable ARM-only output:
+
+```sh
+flutter config --enable-macos-arm64-only
+flutter clean
+flutter pub get
+flutter build macos --release
+```
+
+Run the same `lipo -archs` check above; the expected output is **`arm64`**. This app will run on Apple Silicon Macs and cannot run on Intel Macs. Use the universal build above if you want one app for both architectures.
+
+#### Install or copy the macOS app
 
 The standalone application is created at:
 
@@ -30,7 +64,7 @@ The standalone application is created at:
 build/macos/Build/Products/Release/ptz_control.app
 ```
 
-The currently verified release supports **Intel and Apple Silicon Macs running macOS 13 or later**. Flutter and the required frameworks are included in the app, so the receiving Mac does **not** need Flutter, Dart, or Xcode. App Store publishing is not required.
+Flutter and the required frameworks are included in the app, so the receiving Mac does **not** need Flutter, Dart, or Xcode. App Store publishing is not required. Both build options use the same output path, so package or copy the app before building the other architecture option.
 
 To use the app locally, open the output folder and drag **ptz_control.app** into **Applications**, then double-click it to launch:
 
@@ -51,9 +85,6 @@ Copy **build/ptz_control-macos.zip** to the other Mac, unzip it, drag **ptz_cont
 The current build is ad hoc signed and is not notarized. If macOS blocks an app you built or trust, try opening it once, then go to **System Settings → Privacy & Security → Open Anyway**. See [Apple’s instructions for opening an unnotarized app](https://support.apple.com/en-us/102445).
 
 Camera configurations, preset display names, and preset snapshots are stored separately on each Mac; copying the app does not transfer them. Presets stored in the camera remain in the camera.
-
-Note: Xcode 27 no longer requires macOS binaries to support the x86_64 architecture. To build ARM-only macOS apps now, run: `flutter config --enable-macos-arm64-only`. This will become the default behavior
-in a future Flutter release.
 
 ### iOS
 
